@@ -4,6 +4,7 @@ struct ContentView: View {
     @Environment(WebSocketClient.self) private var client
     @State private var inputText = ""
     @State private var showSettings = false
+    @FocusState private var isInputFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -30,7 +31,10 @@ struct ContentView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView()
             }
-            .onAppear { client.connect() }
+            .onAppear {
+                client.connect()
+                isInputFocused = true
+            }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active && !client.isConnected {
                     client.connect()
@@ -79,6 +83,7 @@ struct ContentView: View {
     private var inputBar: some View {
         HStack(alignment: .bottom, spacing: 8) {
             TextField("Message", text: $inputText, axis: .vertical)
+                .focused($isInputFocused)
                 .lineLimit(1...5)
                 .textFieldStyle(.plain)
                 .padding(.horizontal, 12)
@@ -119,6 +124,7 @@ struct ContentView: View {
         let text = inputText
         inputText = ""
         client.send(text)
+        isInputFocused = true
     }
 }
 

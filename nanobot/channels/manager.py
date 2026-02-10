@@ -135,7 +135,8 @@ class ChannelManager:
             try:
                 from nanobot.channels.api import ApiChannel
                 self.channels["api"] = ApiChannel(
-                    self.config.channels.api, self.bus
+                    self.config.channels.api, self.bus,
+                    session_manager=self.session_manager,
                 )
                 logger.info("API channel enabled")
             except ImportError as e:

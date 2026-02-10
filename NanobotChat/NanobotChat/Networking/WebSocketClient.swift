@@ -1,5 +1,8 @@
 import Foundation
 import Observation
+import os
+
+private let log = Logger(subsystem: "chat.nanobot", category: "WebSocket")
 
 @MainActor
 @Observable
@@ -24,6 +27,18 @@ final class WebSocketClient {
         UserDefaults.standard.string(forKey: "serverURL") ?? Self.defaultURL
     }
 
+    /// Persistent session ID so the server can resume the same conversation.
+    let sessionID: String = {
+        if let existing = UserDefaults.standard.string(forKey: "sessionID") {
+            return existing
+        }
+        // Use hex characters only (no hyphens) for a clean URL param
+        let id = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+            .prefix(12).lowercased()
+        UserDefaults.standard.set(String(id), forKey: "sessionID")
+        return String(id)
+    }()
+
     init() {
         self.session = URLSession(configuration: .default)
     }
@@ -31,13 +46,30 @@ final class WebSocketClient {
     // MARK: - Public API
 
     func connect() {
+        // Tear down any existing connection first
+        cancelTasks()
+        webSocketTask?.cancel(with: .normalClosure, reason: nil)
+        webSocketTask = nil
+
         intentionalDisconnect = false
         reconnectDelay = 1.0
         reconnectTask?.cancel()
         reconnectTask = nil
 
-        guard let url = URL(string: serverURL) else { return }
+        guard var components = URLComponents(string: serverURL) else {
+            log.error("Invalid server URL: \(self.serverURL)")
+            return
+        }
+        var queryItems = components.queryItems ?? []
+        queryItems.append(URLQueryItem(name: "session_id", value: sessionID))
+        components.queryItems = queryItems
 
+        guard let url = components.url else {
+            log.error("Failed to build URL with session_id")
+            return
+        }
+
+        log.info("Connecting to \(url.absoluteString) session=\(self.sessionID)")
         let task = session.webSocketTask(with: url)
         webSocketTask = task
         task.resume()
@@ -68,8 +100,10 @@ final class WebSocketClient {
         guard let data = try? JSONEncoder().encode(outgoing),
               let json = String(data: data, encoding: .utf8) else { return }
 
+        log.info("Sending: \(json)")
         webSocketTask?.send(.string(json)) { [weak self] error in
-            if error != nil {
+            if let error {
+                log.error("Send failed: \(error.localizedDescription)")
                 Task { @MainActor in
                     self?.handleDisconnect()
                 }
@@ -89,6 +123,7 @@ final class WebSocketClient {
                     self.handleMessage(message)
                 } catch {
                     if !Task.isCancelled {
+                        log.error("Receive error: \(error.localizedDescription)")
                         self.handleDisconnect()
                     }
                     break
@@ -109,14 +144,30 @@ final class WebSocketClient {
             return
         }
 
-        guard let incoming = try? JSONDecoder().decode(IncomingMessage.self, from: data) else { return }
+        guard let incoming = try? JSONDecoder().decode(IncomingMessage.self, from: data) else {
+            log.warning("Failed to decode incoming message")
+            return
+        }
 
-        // Ignore unknown message types (forward-compatible)
-        guard incoming.type == "response", let content = incoming.content else { return }
+        log.info("Received message type=\(incoming.type)")
 
-        let botMessage = ChatMessage(content: content, isFromUser: false)
-        messages.append(botMessage)
-        isWaitingForResponse = false
+        switch incoming.type {
+        case "history":
+            guard let entries = incoming.messages else { return }
+            log.info("Restoring \(entries.count) history messages")
+            messages = entries.map { entry in
+                ChatMessage(content: entry.content, isFromUser: entry.role == "user")
+            }
+
+        case "response":
+            guard let content = incoming.content else { return }
+            let botMessage = ChatMessage(content: content, isFromUser: false)
+            messages.append(botMessage)
+            isWaitingForResponse = false
+
+        default:
+            break
+        }
     }
 
     // MARK: - Ping Loop
@@ -142,6 +193,7 @@ final class WebSocketClient {
 
     private func handleDisconnect() {
         guard isConnected else { return }
+        log.warning("Disconnected from server")
         cancelTasks()
         webSocketTask?.cancel(with: .abnormalClosure, reason: nil)
         webSocketTask = nil

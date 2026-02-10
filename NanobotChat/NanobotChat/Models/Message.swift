@@ -21,9 +21,16 @@ struct OutgoingMessage: Encodable {
 }
 
 /// Server -> Client: {"type": "response", "content": "Hi!", "id": "msg_abc123"}
+/// or:               {"type": "history", "messages": [{"role":"user","content":"..."},…]}
 /// Fields are optional so unknown message types decode without error.
 struct IncomingMessage: Decodable {
     let type: String
     let content: String?
     let id: String?
+    let messages: [HistoryEntry]?
+}
+
+struct HistoryEntry: Decodable {
+    let role: String
+    let content: String
 }
