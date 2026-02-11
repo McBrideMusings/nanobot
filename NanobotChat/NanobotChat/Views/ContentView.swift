@@ -4,6 +4,7 @@ struct ContentView: View {
     @Environment(WebSocketClient.self) private var client
     @State private var inputText = ""
     @State private var showSettings = false
+    @State private var showLogs = false
     @FocusState private var isInputFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
 
@@ -23,10 +24,18 @@ struct ContentView: View {
                     connectionIndicator
                 }
                 ToolbarItem(placement: .automatic) {
+                    Button { showLogs = true } label: {
+                        Image(systemName: "text.alignleft")
+                    }
+                }
+                ToolbarItem(placement: .automatic) {
                     Button { showSettings = true } label: {
                         Image(systemName: "gear")
                     }
                 }
+            }
+            .sheet(isPresented: $showLogs) {
+                LogView()
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()

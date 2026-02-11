@@ -8,6 +8,7 @@ private let log = Logger(subsystem: "chat.nanobot", category: "WebSocket")
 @Observable
 final class WebSocketClient {
     var messages: [ChatMessage] = []
+    var logEntries: [LogEntry] = []
     var isConnected = false
     var isWaitingForResponse = false
 
@@ -27,18 +28,6 @@ final class WebSocketClient {
         UserDefaults.standard.string(forKey: "serverURL") ?? Self.defaultURL
     }
 
-    /// Persistent session ID so the server can resume the same conversation.
-    let sessionID: String = {
-        if let existing = UserDefaults.standard.string(forKey: "sessionID") {
-            return existing
-        }
-        // Use hex characters only (no hyphens) for a clean URL param
-        let id = UUID().uuidString.replacingOccurrences(of: "-", with: "")
-            .prefix(12).lowercased()
-        UserDefaults.standard.set(String(id), forKey: "sessionID")
-        return String(id)
-    }()
-
     init() {
         self.session = URLSession(configuration: .default)
     }
@@ -56,20 +45,13 @@ final class WebSocketClient {
         reconnectTask?.cancel()
         reconnectTask = nil
 
-        guard var components = URLComponents(string: serverURL) else {
+        guard let url = URL(string: serverURL) else {
             log.error("Invalid server URL: \(self.serverURL)")
             return
         }
-        var queryItems = components.queryItems ?? []
-        queryItems.append(URLQueryItem(name: "session_id", value: sessionID))
-        components.queryItems = queryItems
 
-        guard let url = components.url else {
-            log.error("Failed to build URL with session_id")
-            return
-        }
-
-        log.info("Connecting to \(url.absoluteString) session=\(self.sessionID)")
+        addLog(.system, "CONNECT", serverURL)
+        log.info("Connecting to \(url.absoluteString)")
         let task = session.webSocketTask(with: url)
         webSocketTask = task
         task.resume()
@@ -86,6 +68,7 @@ final class WebSocketClient {
         webSocketTask = nil
         isConnected = false
         isWaitingForResponse = false
+        addLog(.system, "DISCONNECT", "Closed by user")
     }
 
     func send(_ text: String) {
@@ -100,6 +83,7 @@ final class WebSocketClient {
         guard let data = try? JSONEncoder().encode(outgoing),
               let json = String(data: data, encoding: .utf8) else { return }
 
+        addLog(.send, "SEND", trimmed)
         log.info("Sending: \(json)")
         webSocketTask?.send(.string(json)) { [weak self] error in
             if let error {
@@ -109,6 +93,10 @@ final class WebSocketClient {
                 }
             }
         }
+    }
+
+    func clearLogs() {
+        logEntries.removeAll()
     }
 
     // MARK: - Receive Loop
@@ -146,6 +134,7 @@ final class WebSocketClient {
 
         guard let incoming = try? JSONDecoder().decode(IncomingMessage.self, from: data) else {
             log.warning("Failed to decode incoming message")
+            addLog(.receive, "ERROR", "Failed to decode message")
             return
         }
 
@@ -158,15 +147,21 @@ final class WebSocketClient {
             messages = entries.map { entry in
                 ChatMessage(content: entry.content, isFromUser: entry.role == "user")
             }
+            addLog(.receive, "HISTORY", "[\(entries.count) messages]")
 
         case "response":
             guard let content = incoming.content else { return }
             let botMessage = ChatMessage(content: content, isFromUser: false)
             messages.append(botMessage)
             isWaitingForResponse = false
+            addLog(.receive, "RESPONSE", content)
+
+        case "error":
+            let content = incoming.content ?? "Unknown error"
+            addLog(.receive, "ERROR", content)
 
         default:
-            break
+            addLog(.receive, incoming.type.uppercased(), incoming.content ?? "")
         }
     }
 
@@ -194,6 +189,7 @@ final class WebSocketClient {
     private func handleDisconnect() {
         guard isConnected else { return }
         log.warning("Disconnected from server")
+        addLog(.system, "DISCONNECT", "Connection lost, reconnecting...")
         cancelTasks()
         webSocketTask?.cancel(with: .abnormalClosure, reason: nil)
         webSocketTask = nil
@@ -221,5 +217,11 @@ final class WebSocketClient {
         receiveTask = nil
         pingTask?.cancel()
         pingTask = nil
+    }
+
+    // MARK: - Logging
+
+    private func addLog(_ direction: LogEntry.Direction, _ label: String, _ content: String) {
+        logEntries.append(LogEntry(timestamp: Date(), direction: direction, label: label, content: content))
     }
 }

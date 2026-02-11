@@ -34,3 +34,28 @@ struct HistoryEntry: Decodable {
     let role: String
     let content: String
 }
+
+struct LogEntry: Identifiable {
+    let id = UUID()
+    let timestamp: Date
+    let direction: Direction
+    let label: String
+    let content: String
+
+    enum Direction: String {
+        case send = ">>>"
+        case receive = "<<<"
+        case system = "---"
+    }
+
+    var formatted: String {
+        let time = Self.formatter.string(from: timestamp)
+        return "\(time) \(direction.rawValue) \(label): \(content)"
+    }
+
+    private static let formatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        return f
+    }()
+}
