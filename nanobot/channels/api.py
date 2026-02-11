@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import uuid
 from typing import TYPE_CHECKING
-from urllib.parse import parse_qs, urlparse
 
 from loguru import logger
 
@@ -17,6 +16,8 @@ from nanobot.config.schema import ApiConfig
 if TYPE_CHECKING:
     from nanobot.session.manager import SessionManager
 
+FIXED_CHAT_ID = "default"
+
 
 class ApiChannel(BaseChannel):
     """
@@ -26,7 +27,8 @@ class ApiChannel(BaseChannel):
       Inbound:  {"type": "message", "content": "hello"}
       Outbound: {"type": "response", "content": "Hi!"}
 
-    Clients may pass ?session_id=<id> to resume a persistent session.
+    All connections share a single persistent session (api:default),
+    matching how other channels (Telegram, Discord, Slack) work.
     On connect the server replays the session history so all clients
     stay in sync.
     """
@@ -40,6 +42,7 @@ class ApiChannel(BaseChannel):
         self.session_manager = session_manager
         self._server = None
         self._connections: dict[str, object] = {}
+        self._latest_conn_id: str | None = None
 
     async def start(self) -> None:
         """Start the WebSocket server."""
@@ -64,12 +67,19 @@ class ApiChannel(BaseChannel):
             self._server = None
 
         self._connections.clear()
+        self._latest_conn_id = None
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send a response to the client identified by chat_id."""
-        ws = self._connections.get(msg.chat_id)
+        """Send a response to the client via conn_id in metadata."""
+        conn_id = msg.metadata.get("_conn_id") if msg.metadata else None
+        ws = self._connections.get(conn_id) if conn_id else None
+
+        # Fallback: send to most recently connected client
+        if not ws and self._latest_conn_id:
+            ws = self._connections.get(self._latest_conn_id)
+
         if not ws:
-            logger.warning(f"API: no connection for chat_id {msg.chat_id}")
+            logger.warning(f"API: no connection for conn_id={conn_id}")
             return
 
         try:
@@ -80,53 +90,32 @@ class ApiChannel(BaseChannel):
 
     async def _handler(self, ws) -> None:
         """Handle a single WebSocket connection."""
-        session_id = self._parse_session_id(ws) or uuid.uuid4().hex[:8]
-        self._connections[session_id] = ws
+        conn_id = uuid.uuid4().hex[:8]
+        self._connections[conn_id] = ws
+        self._latest_conn_id = conn_id
         remote = ws.remote_address
-        logger.info(f"API: client connected session={session_id} from {remote}")
+        logger.info(f"API: client connected conn={conn_id} from {remote}")
 
-        await self._send_history(ws, session_id)
+        await self._send_history(ws)
 
         try:
             async for raw in ws:
-                await self._process_message(ws, session_id, raw)
+                await self._process_message(ws, conn_id, raw)
         except Exception as e:
-            logger.debug(f"API: connection {session_id} closed: {e}")
+            logger.debug(f"API: connection {conn_id} closed: {e}")
         finally:
-            self._connections.pop(session_id, None)
-            logger.info(f"API: client disconnected {session_id}")
+            self._connections.pop(conn_id, None)
+            if self._latest_conn_id == conn_id:
+                self._latest_conn_id = None
+            logger.info(f"API: client disconnected {conn_id}")
 
-    @staticmethod
-    def _parse_session_id(ws) -> str | None:
-        """Extract session_id query parameter from the WebSocket request."""
-        try:
-            # New API (websockets 13+): ws.request.path
-            # Legacy API (websockets 10-12): ws.path
-            if hasattr(ws, "request") and ws.request is not None:
-                path = ws.request.path
-            elif hasattr(ws, "path"):
-                path = ws.path
-            else:
-                logger.warning("API: cannot read request path from websocket object")
-                return None
-
-            logger.debug(f"API: raw websocket path = {path!r}")
-            params = parse_qs(urlparse(path).query)
-            val = params.get("session_id", [None])[0]
-            if not val:
-                logger.debug(f"API: no session_id query param in path")
-            return val if val else None
-        except Exception as e:
-            logger.error(f"API: failed to parse session_id: {e}")
-            return None
-
-    async def _send_history(self, ws, session_id: str) -> None:
+    async def _send_history(self, ws) -> None:
         """Send existing session history to a newly connected client."""
         if not self.session_manager:
             logger.warning("API: no session_manager, cannot send history")
             return
 
-        session_key = f"{self.name}:{session_id}"
+        session_key = f"{self.name}:{FIXED_CHAT_ID}"
         session = self.session_manager.get_or_create(session_key)
         if not session.messages:
             logger.debug(f"API: no history for session {session_key}")
@@ -137,7 +126,7 @@ class ApiChannel(BaseChannel):
         payload = json.dumps({"type": "history", "messages": history})
         try:
             await ws.send(payload)
-            logger.info(f"API: sent {len(history)} history messages to {session_id}")
+            logger.info(f"API: sent {len(history)} history messages")
         except Exception as e:
             logger.error(f"API: failed to send history: {e}")
 
@@ -160,6 +149,7 @@ class ApiChannel(BaseChannel):
 
         await self._handle_message(
             sender_id=conn_id,
-            chat_id=conn_id,
+            chat_id=FIXED_CHAT_ID,
             content=content,
+            metadata={"_conn_id": conn_id},
         )

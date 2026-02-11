@@ -131,7 +131,8 @@ class AgentLoop:
                     await self.bus.publish_outbound(OutboundMessage(
                         channel=msg.channel,
                         chat_id=msg.chat_id,
-                        content=f"Sorry, I encountered an error: {str(e)}"
+                        content=f"Sorry, I encountered an error: {str(e)}",
+                        metadata=msg.metadata or {},
                     ))
             except asyncio.TimeoutError:
                 continue
