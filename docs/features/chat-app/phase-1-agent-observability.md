@@ -1,0 +1,68 @@
+# Phase 1 — Agent Observability (Foundation)
+
+**Priority:** Highest — everything else builds on this
+**Scope:** Backend instrumentation + both clients
+
+## Event Stream Protocol
+
+Extend the existing WebSocket protocol with a new `event` message type. Events are fire-and-forget — used for live display, not persisted on the client. Missed events on reconnect are acceptable; message history (as today) is the durable record.
+
+```json
+{"type": "event", "category": "agent", "event": "thinking_started", "data": {"message_id": "..."}}
+{"type": "event", "category": "agent", "event": "tool_call", "data": {"name": "web_search", "args": {"query": "..."}, "iteration": 3}}
+{"type": "event", "category": "agent", "event": "tool_result", "data": {"name": "web_search", "result_preview": "...", "duration_ms": 1200}}
+{"type": "event", "category": "agent", "event": "thinking_finished", "data": {"iterations": 5, "tokens_used": 1847}}
+{"type": "event", "category": "heartbeat", "event": "tick", "data": {"tasks_found": 2, "summary": "Checked reminders, updated daily note"}}
+{"type": "event", "category": "subagent", "event": "spawned", "data": {"id": "abc123", "label": "Research weather", "task": "..."}}
+{"type": "event", "category": "subagent", "event": "completed", "data": {"id": "abc123", "label": "Research weather", "success": true, "summary": "..."}}
+{"type": "event", "category": "cron", "event": "executed", "data": {"job": "daily_summary", "status": "ok"}}
+```
+
+**Backend work:** Hook into existing call sites in `loop.py`, `heartbeat/service.py`, and `subagent.py` to emit events to all connected WebSocket clients alongside existing logging.
+
+## Agent Status Bar
+
+A persistent, thin status strip showing the agent's current state in real-time:
+
+- `Idle` (dimmed)
+- `Thinking...` (pulsing)
+- `Running: web_search` (with tool name)
+- `Heartbeat in progress`
+- `1 sub-agent running`
+
+Provides at-a-glance awareness without cluttering the chat.
+
+## Inline Event Cards
+
+Appear in the main chat feed as compact, visually distinct cards (not regular message bubbles — think iMessage payment confirmations or game invites).
+
+- **Heartbeat summaries:** `"Heartbeat · Checked 2 tasks · Updated daily note"` — collapsed by default, tappable.
+- **Tool call chains:** Live-updating while bot works: `"Thinking... → web_search("weather SF") → read_file("notes.md") → Composing response"`. Replaces the current `...` typing indicator.
+- **Sub-agent activity:** `"Started background task: Research weather"` with spinner, updates in-place on completion.
+- **Cron events:** `"Cron · daily_summary · ran successfully"`.
+
+## Detail Panel (Progressive Disclosure)
+
+Three levels of depth, consistent across all event types:
+
+### Level 1 — Inline card
+
+One line in the chat feed. Tappable.
+
+### Level 2 — Detail sheet
+
+Slides up on tap. Contains collapsible sections, all collapsed by default. Each shows a one-line summary with disclosure chevron:
+
+```
+▶ HEARTBEAT.md contents          3.2 KB
+▶ Agent reasoning                 4 iterations
+▶ Actions taken                   2 tool calls
+▶ Final response                  "HEARTBEAT_OK"
+  Duration: 8.4s · 2,130 tokens
+```
+
+Expanding a section shows a truncated preview (~10 lines) with a "Read full" link.
+
+### Level 3 — Reader view
+
+Full-screen push navigation for long content (chain of thought transcripts, full documents, sub-agent tool logs). Clean typography, scrollable, back button. Never shows a wall of text unless you explicitly navigate into it.
