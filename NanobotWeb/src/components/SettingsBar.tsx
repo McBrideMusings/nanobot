@@ -7,15 +7,22 @@ interface Props {
   serverUrl: string;
   messageCount: number;
   frameCount: number;
+  streamingEnabled: boolean;
   onUrlChange: (url: string) => void;
   onResetSession: () => void;
   onConnect: () => void;
   onDisconnect: () => void;
+  onStreamingToggle: (enabled: boolean) => void;
+  pushSupported: boolean;
+  pushSubscribed: boolean;
+  pushPermission: NotificationPermission;
+  onPushToggle: () => void;
 }
 
 export function SettingsBar({
-  status, serverUrl, messageCount, frameCount,
-  onUrlChange, onResetSession, onConnect, onDisconnect,
+  status, serverUrl, messageCount, frameCount, streamingEnabled,
+  onUrlChange, onResetSession, onConnect, onDisconnect, onStreamingToggle,
+  pushSupported, pushSubscribed, pushPermission, onPushToggle,
 }: Props) {
   const [editing, setEditing] = useState(false);
   const [urlDraft, setUrlDraft] = useState(serverUrl);
@@ -29,6 +36,14 @@ export function SettingsBar({
     if (e.key === 'Enter') handleUrlSubmit();
     if (e.key === 'Escape') { setUrlDraft(serverUrl); setEditing(false); }
   };
+
+  const pushTitle = !pushSupported
+    ? 'Push notifications not supported (requires HTTPS)'
+    : pushPermission === 'denied'
+      ? 'Notification permission denied'
+      : pushSubscribed
+        ? 'Click to unsubscribe from push notifications'
+        : 'Click to enable push notifications';
 
   return (
     <div className="settings-bar">
@@ -57,6 +72,28 @@ export function SettingsBar({
             <button onClick={onDisconnect}>Disconnect</button>
           )}
           <button onClick={onResetSession}>Clear Chat</button>
+          <label className="toggle-label" title="Toggle streaming responses">
+            <input
+              type="checkbox"
+              checked={streamingEnabled}
+              onChange={e => onStreamingToggle(e.target.checked)}
+            />
+            Stream
+          </label>
+          {pushSupported && (
+            <label
+              className="toggle-label"
+              title={pushTitle}
+            >
+              <input
+                type="checkbox"
+                checked={pushSubscribed}
+                onChange={onPushToggle}
+                disabled={pushPermission === 'denied'}
+              />
+              Push
+            </label>
+          )}
         </div>
       </div>
       <div className="settings-bottom">

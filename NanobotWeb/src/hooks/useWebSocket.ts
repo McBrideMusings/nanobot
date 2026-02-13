@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ChatMessage, DebugFrame, IncomingMessage } from '../types';
+import type {
+  AgentEventRecord, AgentStatus, ChatMessage, DebugFrame, IncomingMessage, LinkPreviewData,
+} from '../types';
 
 const MAX_FRAMES = 500;
+const MAX_EVENTS = 50;
 const MAX_RECONNECT_DELAY = 30_000;
 
 function generateId(): string {
@@ -10,22 +13,42 @@ function generateId(): string {
 
 export type ConnectionStatus = 'connected' | 'disconnected' | 'connecting';
 
-export function useWebSocket(serverUrl: string) {
+export function useWebSocket(serverUrl: string, streamingEnabled: boolean = true) {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [frames, setFrames] = useState<DebugFrame[]>([]);
   const [waitingForResponse, setWaitingForResponse] = useState(false);
+  const [agentStatus, setAgentStatus] = useState<AgentStatus>('idle');
+  const [agentStatusDetail, setAgentStatusDetail] = useState('');
+  const [events, setEvents] = useState<AgentEventRecord[]>([]);
+  const [linkPreviews, setLinkPreviews] = useState<Map<string, LinkPreviewData>>(new Map());
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectDelay = useRef(1000);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const intentionalClose = useRef(false);
 
+  // Streaming state tracked via refs to avoid re-renders per chunk
+  const streamingMsgId = useRef<string | null>(null);
+  const streamBuffer = useRef('');
+  const streamingEnabledRef = useRef(streamingEnabled);
+  streamingEnabledRef.current = streamingEnabled;
+  // Track whether a stream completed for this response cycle (to suppress duplicate 'response')
+  const streamDelivered = useRef(false);
+
   const addFrame = useCallback((direction: 'in' | 'out', raw: string, type: string) => {
     setFrames(prev => {
       const next = [...prev, { id: generateId(), direction, raw, type, timestamp: new Date() }];
       return next.length > MAX_FRAMES ? next.slice(-MAX_FRAMES) : next;
     });
+  }, []);
+
+  // Helper to send link preview requests
+  const requestLinkPreview = useCallback((url: string) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      const payload = JSON.stringify({ type: 'link_preview', url });
+      wsRef.current.send(payload);
+    }
   }, []);
 
   const connect = useCallback(() => {
@@ -74,13 +97,21 @@ export function useWebSocket(serverUrl: string) {
         }
         case 'response': {
           if ('content' in parsed) {
-            setMessages(prev => [...prev, {
-              id: generateId(),
-              content: parsed.content,
-              isFromUser: false,
-              timestamp: new Date(),
-            }]);
+            // If streaming already delivered this message, skip the duplicate
+            if (streamDelivered.current) {
+              streamDelivered.current = false;
+            } else {
+              setMessages(prev => [...prev, {
+                id: generateId(),
+                content: parsed.content,
+                isFromUser: false,
+                timestamp: new Date(),
+              }]);
+            }
             setWaitingForResponse(false);
+            setAgentStatus('idle');
+            setAgentStatusDetail('');
+            setEvents([]);
           }
           break;
         }
@@ -93,6 +124,132 @@ export function useWebSocket(serverUrl: string) {
               timestamp: new Date(),
             }]);
             setWaitingForResponse(false);
+            setAgentStatus('idle');
+            setAgentStatusDetail('');
+          }
+          break;
+        }
+
+        // --- Streaming messages ---
+        case 'stream_start': {
+          streamingMsgId.current = parsed.id;
+          streamBuffer.current = '';
+          if (streamingEnabledRef.current) {
+            // Create a placeholder message for progressive rendering
+            const msgId = `stream-${parsed.id}`;
+            setMessages(prev => [...prev, {
+              id: msgId,
+              content: '',
+              isFromUser: false,
+              timestamp: new Date(),
+              isStreaming: true,
+            }]);
+            setWaitingForResponse(false);
+          }
+          break;
+        }
+        case 'stream_chunk': {
+          if (parsed.id !== streamingMsgId.current) break;
+          streamBuffer.current += parsed.delta;
+          if (streamingEnabledRef.current) {
+            const accumulated = streamBuffer.current;
+            const msgId = `stream-${parsed.id}`;
+            setMessages(prev =>
+              prev.map(m => m.id === msgId ? { ...m, content: accumulated } : m)
+            );
+          }
+          break;
+        }
+        case 'stream_end': {
+          if (parsed.id !== streamingMsgId.current) break;
+          const finalContent = streamBuffer.current;
+          const msgId = `stream-${parsed.id}`;
+          streamingMsgId.current = null;
+          streamBuffer.current = '';
+          streamDelivered.current = true;
+
+          if (streamingEnabledRef.current) {
+            // Mark the streaming message as complete
+            setMessages(prev =>
+              prev.map(m => m.id === msgId
+                ? { ...m, content: finalContent, isStreaming: false }
+                : m
+              )
+            );
+          } else {
+            // Non-streaming mode: show the full message at once
+            setMessages(prev => [...prev, {
+              id: msgId,
+              content: finalContent,
+              isFromUser: false,
+              timestamp: new Date(),
+            }]);
+          }
+          // Don't reset waitingForResponse here — the 'response' message
+          // from the bus still handles that (stream_end fires mid-loop
+          // when tool calls follow). The final 'response' resets everything.
+          break;
+        }
+
+        case 'link_preview_result': {
+          const preview: LinkPreviewData = {
+            url: parsed.url,
+            title: parsed.title,
+            description: parsed.description,
+            image: parsed.image,
+            favicon: parsed.favicon,
+          };
+          setLinkPreviews(prev => new Map(prev).set(parsed.url, preview));
+          break;
+        }
+
+        case 'event': {
+          if ('category' in parsed && 'event' in parsed) {
+            const record: AgentEventRecord = {
+              id: generateId(),
+              category: parsed.category,
+              event: parsed.event,
+              data: parsed.data ?? {},
+              timestamp: new Date(),
+            };
+            setEvents(prev => {
+              const next = [...prev, record];
+              return next.length > MAX_EVENTS ? next.slice(-MAX_EVENTS) : next;
+            });
+
+            // Update agent status based on event type
+            if (parsed.category === 'agent') {
+              switch (parsed.event) {
+                case 'thinking_started':
+                  setAgentStatus('thinking');
+                  setAgentStatusDetail('');
+                  break;
+                case 'tool_call':
+                  setAgentStatus('tool_call');
+                  setAgentStatusDetail(String(parsed.data?.name ?? ''));
+                  break;
+                case 'thinking_finished':
+                  // Reset everything — covers both user-initiated and
+                  // background processing (heartbeat, cron) that don't
+                  // produce a WebSocket "response" frame.
+                  setWaitingForResponse(false);
+                  setAgentStatus('idle');
+                  setAgentStatusDetail('');
+                  setEvents([]);
+                  break;
+              }
+            } else if (parsed.category === 'heartbeat') {
+              setAgentStatus('heartbeat');
+              setAgentStatusDetail(String(parsed.data?.summary ?? ''));
+            } else if (parsed.category === 'subagent') {
+              if (parsed.event === 'spawned') {
+                setAgentStatus('subagent');
+                setAgentStatusDetail(String(parsed.data?.label ?? ''));
+              } else if (parsed.event === 'completed') {
+                setAgentStatus('idle');
+                setAgentStatusDetail('');
+              }
+            }
           }
           break;
         }
@@ -102,6 +259,9 @@ export function useWebSocket(serverUrl: string) {
     ws.onclose = () => {
       setStatus('disconnected');
       setWaitingForResponse(false);
+      setAgentStatus('idle');
+      setAgentStatusDetail('');
+      setEvents([]);
       wsRef.current = null;
 
       if (!intentionalClose.current) {
@@ -142,6 +302,7 @@ export function useWebSocket(serverUrl: string) {
       timestamp: new Date(),
     }]);
     setWaitingForResponse(true);
+    streamDelivered.current = false;
   }, [addFrame]);
 
   const resetSession = useCallback(() => {
@@ -172,10 +333,15 @@ export function useWebSocket(serverUrl: string) {
     messages,
     frames,
     waitingForResponse,
+    agentStatus,
+    agentStatusDetail,
+    events,
     sendMessage,
     connect,
     disconnect,
     resetSession,
     clearFrames,
+    requestLinkPreview,
+    linkPreviews,
   };
 }

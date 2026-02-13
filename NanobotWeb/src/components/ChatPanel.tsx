@@ -1,24 +1,31 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ChatMessage } from '../types';
+import type { AgentEventRecord, ChatMessage, LinkPreviewData } from '../types';
 import { MessageBubble } from './MessageBubble';
+import { EventCards } from './EventCard';
 
 interface Props {
   messages: ChatMessage[];
   waitingForResponse: boolean;
+  events: AgentEventRecord[];
   onSend: (content: string) => void;
+  requestLinkPreview?: (url: string) => void;
+  linkPreviews?: Map<string, LinkPreviewData>;
 }
 
-export function ChatPanel({ messages, waitingForResponse, onSend }: Props) {
+export function ChatPanel({
+  messages, waitingForResponse, events, onSend,
+  requestLinkPreview, linkPreviews,
+}: Props) {
   const [input, setInput] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll to bottom on new messages or events
   useEffect(() => {
     if (listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
-  }, [messages, waitingForResponse]);
+  }, [messages, waitingForResponse, events]);
 
   const handleSend = () => {
     if (!input.trim()) return;
@@ -49,7 +56,16 @@ export function ChatPanel({ messages, waitingForResponse, onSend }: Props) {
     <div className="chat-panel">
       <div className="panel-header">Chat</div>
       <div className="message-list" ref={listRef}>
-        {messages.map(m => <MessageBubble key={m.id} message={m} />)}
+        {messages.map(m => (
+          <MessageBubble
+            key={m.id}
+            message={m}
+            isStreaming={m.isStreaming}
+            linkPreviews={linkPreviews}
+            requestLinkPreview={requestLinkPreview}
+          />
+        ))}
+        {events.length > 0 && <EventCards events={events} />}
         {waitingForResponse && (
           <div className="message-bubble bot">
             <div className="bubble-content typing">Thinking...</div>

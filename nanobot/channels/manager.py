@@ -13,6 +13,7 @@ from nanobot.channels.base import BaseChannel
 from nanobot.config.schema import Config
 
 if TYPE_CHECKING:
+    from nanobot.bus.event_bus import EventBus
     from nanobot.session.manager import SessionManager
 
 
@@ -26,10 +27,12 @@ class ChannelManager:
     - Route outbound messages
     """
     
-    def __init__(self, config: Config, bus: MessageBus, session_manager: "SessionManager | None" = None):
+    def __init__(self, config: Config, bus: MessageBus, session_manager: "SessionManager | None" = None,
+                 event_bus: "EventBus | None" = None):
         self.config = config
         self.bus = bus
         self.session_manager = session_manager
+        self.event_bus = event_bus
         self.channels: dict[str, BaseChannel] = {}
         self._dispatch_task: asyncio.Task | None = None
         
@@ -149,6 +152,8 @@ class ChannelManager:
                 self.channels["api"] = ApiChannel(
                     self.config.channels.api, self.bus,
                     session_manager=self.session_manager,
+                    event_bus=self.event_bus,
+                    workspace=self.config.agents.defaults.workspace,
                 )
                 logger.info("API channel enabled")
             except ImportError as e:
