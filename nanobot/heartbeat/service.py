@@ -1,18 +1,21 @@
 """Heartbeat service - periodic agent wake-up to check for tasks."""
 
+from __future__ import annotations
+
 import asyncio
 from pathlib import Path
-from typing import Any, Callable, Coroutine
+from typing import Any, Callable, Coroutine, TYPE_CHECKING
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from nanobot.bus.event_bus import EventBus
 
 # Default interval: 30 minutes
 DEFAULT_HEARTBEAT_INTERVAL_S = 30 * 60
 
-# The prompt sent to agent during heartbeat
-HEARTBEAT_PROMPT = """Read HEARTBEAT.md in your workspace (if it exists).
-Follow any instructions or tasks listed there.
-If nothing needs attention, reply with just: HEARTBEAT_OK"""
+# Fallback prompt when HEARTBEAT.md has no content
+HEARTBEAT_FALLBACK_PROMPT = "No heartbeat instructions found. Reply with just: HEARTBEAT_OK"
 
 # Token that indicates "nothing to do"
 HEARTBEAT_OK_TOKEN = "HEARTBEAT_OK"
@@ -49,11 +52,13 @@ class HeartbeatService:
         on_heartbeat: Callable[[str], Coroutine[Any, Any, str]] | None = None,
         interval_s: int = DEFAULT_HEARTBEAT_INTERVAL_S,
         enabled: bool = True,
+        event_bus: "EventBus | None" = None,
     ):
         self.workspace = workspace
         self.on_heartbeat = on_heartbeat
         self.interval_s = interval_s
         self.enabled = enabled
+        self.event_bus = event_bus
         self._running = False
         self._task: asyncio.Task | None = None
     
@@ -99,32 +104,60 @@ class HeartbeatService:
             except Exception as e:
                 logger.error(f"Heartbeat error: {e}")
     
+    def _build_prompt(self, content: str) -> str:
+        """Build heartbeat prompt with file content injected inline."""
+        return (
+            "You have a scheduled heartbeat task. Here are your instructions:\n\n"
+            f"{content}\n\n"
+            "Follow any instructions or tasks listed above.\n"
+            "If nothing needs attention, reply with just: HEARTBEAT_OK"
+        )
+
     async def _tick(self) -> None:
         """Execute a single heartbeat tick."""
         content = self._read_heartbeat_file()
-        
+
         # Skip if HEARTBEAT.md is empty or doesn't exist
         if _is_heartbeat_empty(content):
             logger.debug("Heartbeat: no tasks (HEARTBEAT.md empty)")
             return
-        
+
         logger.info("Heartbeat: checking for tasks...")
-        
+
         if self.on_heartbeat:
             try:
-                response = await self.on_heartbeat(HEARTBEAT_PROMPT)
-                
+                prompt = self._build_prompt(content)
+                if self.event_bus:
+                    from nanobot.bus.event_bus import AgentEvent
+                    await self.event_bus.publish(AgentEvent("heartbeat", "tick", {
+                        "tasks_found": True, "summary": "Checking tasks...",
+                    }))
+
+                response = await self.on_heartbeat(prompt)
+
                 # Check if agent said "nothing to do"
                 if HEARTBEAT_OK_TOKEN.replace("_", "") in response.upper().replace("_", ""):
                     logger.info("Heartbeat: OK (no action needed)")
+                    if self.event_bus:
+                        from nanobot.bus.event_bus import AgentEvent
+                        await self.event_bus.publish(AgentEvent("heartbeat", "tick", {
+                            "tasks_found": False,
+                        }))
                 else:
                     logger.info(f"Heartbeat: completed task")
-                    
+                    if self.event_bus:
+                        from nanobot.bus.event_bus import AgentEvent
+                        await self.event_bus.publish(AgentEvent("heartbeat", "tick", {
+                            "tasks_found": True, "summary": "Tasks completed",
+                        }))
+
             except Exception as e:
                 logger.error(f"Heartbeat execution failed: {e}")
     
     async def trigger_now(self) -> str | None:
         """Manually trigger a heartbeat."""
         if self.on_heartbeat:
-            return await self.on_heartbeat(HEARTBEAT_PROMPT)
+            content = self._read_heartbeat_file()
+            prompt = self._build_prompt(content) if content else HEARTBEAT_FALLBACK_PROMPT
+            return await self.on_heartbeat(prompt)
         return None

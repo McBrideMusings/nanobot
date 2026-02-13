@@ -166,8 +166,9 @@ class ChannelsConfig(BaseModel):
 class AgentDefaults(BaseModel):
     """Default agent configuration."""
     workspace: str = "~/.nanobot/workspace"
-    model: str = "anthropic/claude-opus-4-5"
-    max_tokens: int = 8192
+    model: str = ""  # empty = auto-discover from provider
+    max_tokens: int = 4096  # output token budget
+    context_window: int | None = None  # override; None = auto-discover from provider
     temperature: float = 0.7
     max_tool_iterations: int = 20
 
@@ -198,6 +199,14 @@ class ProvidersConfig(BaseModel):
     moonshot: ProviderConfig = Field(default_factory=ProviderConfig)
     minimax: ProviderConfig = Field(default_factory=ProviderConfig)
     aihubmix: ProviderConfig = Field(default_factory=ProviderConfig)  # AiHubMix API gateway
+
+
+class HeartbeatConfig(BaseModel):
+    """Heartbeat service configuration."""
+    enabled: bool = True
+    interval_minutes: int = 30
+    channel: str = ""     # Channel to route heartbeat messages through (e.g. "api", "telegram")
+    chat_id: str = ""     # Chat ID for message routing within that channel
 
 
 class GatewayConfig(BaseModel):
@@ -235,6 +244,7 @@ class Config(BaseSettings):
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
+    heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     
     @property

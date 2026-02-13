@@ -71,7 +71,7 @@ Session files are JSONL format — one JSON object per line:
 - First line: metadata (created_at, updated_at)
 - Remaining lines: messages (role, content, timestamp)
 
-Sessions are keyed by `channel:chat_id`. The agent sees the last 50 messages as conversation history.
+Sessions are keyed by `channel:chat_id`. The agent loads the last 50 messages from the session file, then truncates from oldest first to fit within the model's context window. See [Agent Loop — Context Window Management](/architecture/agent-loop#context-window-management) for details.
 
 ## Security
 

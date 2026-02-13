@@ -9,6 +9,7 @@ from typing import Any
 from loguru import logger
 
 from nanobot.bus.events import InboundMessage
+from nanobot.bus.event_bus import AgentEvent, EventBus
 from nanobot.bus.queue import MessageBus
 from nanobot.providers.base import LLMProvider
 from nanobot.agent.tools.registry import ToolRegistry
@@ -35,17 +36,32 @@ class SubagentManager:
         brave_api_key: str | None = None,
         exec_config: "ExecToolConfig | None" = None,
         restrict_to_workspace: bool = False,
+        event_bus: EventBus | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.7,
     ):
         from nanobot.config.schema import ExecToolConfig
         self.provider = provider
         self.workspace = workspace
         self.bus = bus
-        self.model = model or provider.get_default_model()
+        self._model_override = model  # None = auto-discover at runtime
         self.brave_api_key = brave_api_key
         self.exec_config = exec_config or ExecToolConfig()
         self.restrict_to_workspace = restrict_to_workspace
+        self.event_bus = event_bus
+        self.max_tokens = max_tokens
+        self.temperature = temperature
         self._running_tasks: dict[str, asyncio.Task[None]] = {}
     
+    async def _get_model(self) -> str:
+        """Get the effective model name (config override > auto-discovery > provider default)."""
+        if self._model_override:
+            return self._model_override
+        caps = await self.provider.discover()
+        if caps:
+            return caps.model
+        return self.provider.get_default_model()
+
     async def spawn(
         self,
         task: str,
@@ -83,6 +99,10 @@ class SubagentManager:
         bg_task.add_done_callback(lambda _: self._running_tasks.pop(task_id, None))
         
         logger.info(f"Spawned subagent [{task_id}]: {display_label}")
+        if self.event_bus:
+            await self.event_bus.publish(AgentEvent("subagent", "spawned", {
+                "id": task_id, "label": display_label, "task": task[:100],
+            }))
         return f"Subagent [{display_label}] started (id: {task_id}). I'll notify you when it completes."
     
     async def _run_subagent(
@@ -118,17 +138,20 @@ class SubagentManager:
             ]
             
             # Run agent loop (limited iterations)
+            model = await self._get_model()
             max_iterations = 15
             iteration = 0
             final_result: str | None = None
-            
+
             while iteration < max_iterations:
                 iteration += 1
-                
+
                 response = await self.provider.chat(
                     messages=messages,
                     tools=tools.get_definitions(),
-                    model=self.model,
+                    model=model,
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature,
                 )
                 
                 if response.has_tool_calls:
@@ -169,11 +192,21 @@ class SubagentManager:
                 final_result = "Task completed but no final response was generated."
             
             logger.info(f"Subagent [{task_id}] completed successfully")
+            if self.event_bus:
+                await self.event_bus.publish(AgentEvent("subagent", "completed", {
+                    "id": task_id, "label": label, "success": True,
+                    "summary": (final_result or "")[:200],
+                }))
             await self._announce_result(task_id, label, task, final_result, origin, "ok")
-            
+
         except Exception as e:
             error_msg = f"Error: {str(e)}"
             logger.error(f"Subagent [{task_id}] failed: {e}")
+            if self.event_bus:
+                await self.event_bus.publish(AgentEvent("subagent", "completed", {
+                    "id": task_id, "label": label, "success": False,
+                    "summary": error_msg[:200],
+                }))
             await self._announce_result(task_id, label, task, error_msg, origin, "error")
     
     async def _announce_result(

@@ -198,8 +198,9 @@ class ApiChannel(BaseChannel):
             return
 
         # Stream events get their own wire protocol messages
+        # event.event is already "stream_start" / "stream_chunk" / "stream_end"
         if event.category == "stream":
-            stream_type = f"stream_{event.event}"  # stream_start, stream_chunk, stream_end
+            stream_type = event.event
             msg: dict[str, Any] = {"type": stream_type}
             if "id" in event.data:
                 msg["id"] = event.data["id"]

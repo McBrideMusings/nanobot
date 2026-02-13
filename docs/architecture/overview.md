@@ -65,7 +65,7 @@ nanobot/
 
 **Progressive skill loading.** Always-loaded skills get full content in the system prompt. Others get one-line summaries. The agent reads full content on demand via `read_file`.
 
-**Provider registry.** Single source of truth for all LLM providers. Auto-detection, auto-prefixing, no if-elif chains.
+**Provider registry.** Single source of truth for all LLM providers. Auto-detection, auto-prefixing, auto-discovery of model capabilities (name, context window), no if-elif chains.
 
 **Line count discipline.** ~4,000 lines of core code. Avoid abstractions unless they remove more code than they add.
 

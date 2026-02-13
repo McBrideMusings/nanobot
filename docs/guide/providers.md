@@ -46,6 +46,51 @@ Providers are configured in `~/.nanobot/config.json`:
 
 Each provider supports: `apiKey`, `apiBase`, `extraHeaders`.
 
+### Agent Defaults
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `model` | `""` (empty) | Model name. Empty = auto-discover from provider |
+| `maxTokens` | `4096` | Output token budget |
+| `contextWindow` | `null` | Total context window override. `null` = auto-discover |
+| `temperature` | `0.7` | Sampling temperature |
+| `maxToolIterations` | `20` | Max tool call rounds per message |
+
+## Auto-Discovery (vLLM)
+
+When `model` is empty (the default), nanobot queries the provider's `/v1/models` endpoint at runtime to discover the model name and context window. This is especially useful for local vLLM deployments — change the model on vLLM and nanobot adapts automatically:
+
+```json
+{
+  "providers": {
+    "vllm": {
+      "apiKey": "dummy",
+      "apiBase": "http://localhost:8000/v1"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "maxTokens": 4096
+    }
+  }
+}
+```
+
+No `model` or `contextWindow` needed — both are discovered from vLLM. Discovery results are cached for 5 minutes and re-validated on errors.
+
+You can override auto-discovery by setting explicit values:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "model": "Qwen/Qwen3-32B-AWQ",
+      "contextWindow": 32768
+    }
+  }
+}
+```
+
 ## Auto-Detection
 
 Nanobot automatically detects which provider to use based on the model name:

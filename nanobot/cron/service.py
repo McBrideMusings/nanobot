@@ -1,13 +1,18 @@
 """Cron service for scheduling agent tasks."""
 
+from __future__ import annotations
+
 import asyncio
 import json
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Coroutine
+from typing import Any, Callable, Coroutine, TYPE_CHECKING
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from nanobot.bus.event_bus import EventBus
 
 from nanobot.cron.types import CronJob, CronJobState, CronPayload, CronSchedule, CronStore
 
@@ -45,10 +50,12 @@ class CronService:
     def __init__(
         self,
         store_path: Path,
-        on_job: Callable[[CronJob], Coroutine[Any, Any, str | None]] | None = None
+        on_job: Callable[[CronJob], Coroutine[Any, Any, str | None]] | None = None,
+        event_bus: "EventBus | None" = None,
     ):
         self.store_path = store_path
         self.on_job = on_job  # Callback to execute job, returns response text
+        self.event_bus = event_bus
         self._store: CronStore | None = None
         self._timer_task: asyncio.Task | None = None
         self._running = False
@@ -226,11 +233,21 @@ class CronService:
             job.state.last_status = "ok"
             job.state.last_error = None
             logger.info(f"Cron: job '{job.name}' completed")
-            
+            if self.event_bus:
+                from nanobot.bus.event_bus import AgentEvent
+                await self.event_bus.publish(AgentEvent("cron", "executed", {
+                    "job": job.name, "status": "ok",
+                }))
+
         except Exception as e:
             job.state.last_status = "error"
             job.state.last_error = str(e)
             logger.error(f"Cron: job '{job.name}' failed: {e}")
+            if self.event_bus:
+                from nanobot.bus.event_bus import AgentEvent
+                await self.event_bus.publish(AgentEvent("cron", "executed", {
+                    "job": job.name, "status": "error",
+                }))
         
         job.state.last_run_at_ms = start_ms
         job.updated_at_ms = _now_ms()

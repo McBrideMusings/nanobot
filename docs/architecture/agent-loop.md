@@ -10,12 +10,15 @@ The agent loop is the heart of nanobot. It receives messages, builds context, ca
 2. **Load session** — get or create session by `channel:chat_id`
 3. **Build context** — system prompt + bootstrap files + memory + skills + conversation history
 4. **Update tool context** — set current channel/chat_id for message, spawn, and cron tools
-5. **Agent iteration loop** (max 20 iterations):
+5. **Resolve model & context window** — auto-discover from provider or use config overrides
+6. **Truncate history** — drop oldest history messages to fit within the context window budget
+7. **Agent iteration loop** (max 20 iterations):
    - Call LLM with messages + tool definitions
+   - If context overflow error → re-discover capabilities, re-truncate, retry once
    - If response contains tool calls → execute each tool, add results, continue loop
    - If no tool calls → break with final text response
-6. **Save session** — persist updated conversation history
-7. **Send response** — publish `OutboundMessage` to bus
+8. **Save session** — persist updated conversation history
+9. **Send response** — publish `OutboundMessage` to bus
 
 ## Tool Execution
 
@@ -59,8 +62,22 @@ The agent handles special "system" channel messages for:
 - Heartbeat triggers
 - Cron job execution
 
+## Context Window Management
+
+The agent automatically manages the context window to prevent overflow errors:
+
+1. **Auto-discovery** — queries the provider's `/v1/models` endpoint for the model name and context window size. Results cached for 5 minutes.
+2. **Budget calculation** — `input_budget = context_window - max_tokens - tool_definition_tokens`
+3. **History truncation** — system prompt and current message are always kept. Oldest history messages are dropped first until the remaining messages fit within the budget.
+4. **Safety net** — if a `ContextWindowExceededError` still occurs, capabilities are re-discovered, history is re-truncated, and the call is retried once.
+
+Token estimation uses `len(json.dumps(messages)) // 3` (~3 chars per token) as a conservative heuristic. No external tokenizer dependency.
+
+Config overrides (`contextWindow`, `maxTokens`) take priority over auto-discovered values. See [Providers](/guide/providers) for configuration.
+
 ## Error Handling
 
 - LLM call failures return error text as content (no crash)
+- Context window overflow triggers auto re-discovery and retry
 - Tool execution errors return error strings (agent can retry or report)
 - Max iteration limit prevents infinite tool loops

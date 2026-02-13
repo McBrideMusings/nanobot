@@ -267,18 +267,18 @@ This file stores important information that should persist across sessions.
 def _make_provider(config):
     """Create LiteLLMProvider from config. Exits if no API key found."""
     from nanobot.providers.litellm_provider import LiteLLMProvider
-    p = config.get_provider()
     model = config.agents.defaults.model
+    p = config.get_provider(model or None)
     if not (p and p.api_key) and not model.startswith("bedrock/"):
         console.print("[red]Error: No API key configured.[/red]")
         console.print("Set one in ~/.nanobot/config.json under providers section")
         raise typer.Exit(1)
     return LiteLLMProvider(
         api_key=p.api_key if p else None,
-        api_base=config.get_api_base(),
-        default_model=model,
+        api_base=config.get_api_base(model or None),
+        default_model=model or "auto",
         extra_headers=p.extra_headers if p else None,
-        provider_name=config.get_provider_name(),
+        provider_name=config.get_provider_name(model or None),
     )
 
 
@@ -295,6 +295,7 @@ def gateway(
     """Start the nanobot gateway."""
     from nanobot.config.loader import load_config, get_data_dir
     from nanobot.bus.queue import MessageBus
+    from nanobot.bus.event_bus import EventBus
     from nanobot.agent.loop import AgentLoop
     from nanobot.channels.manager import ChannelManager
     from nanobot.session.manager import SessionManager
@@ -310,25 +311,30 @@ def gateway(
     
     config = load_config()
     bus = MessageBus()
+    event_bus = EventBus()
     provider = _make_provider(config)
     session_manager = SessionManager(config.workspace_path)
     
     # Create cron service first (callback set after agent creation)
     cron_store_path = get_data_dir() / "cron" / "jobs.json"
-    cron = CronService(cron_store_path)
+    cron = CronService(cron_store_path, event_bus=event_bus)
     
     # Create agent with cron service
     agent = AgentLoop(
         bus=bus,
         provider=provider,
         workspace=config.workspace_path,
-        model=config.agents.defaults.model,
+        model=config.agents.defaults.model or None,
         max_iterations=config.agents.defaults.max_tool_iterations,
         brave_api_key=config.tools.web.search.api_key or None,
         exec_config=config.tools.exec,
         cron_service=cron,
         restrict_to_workspace=config.tools.restrict_to_workspace,
         session_manager=session_manager,
+        event_bus=event_bus,
+        max_tokens=config.agents.defaults.max_tokens,
+        temperature=config.agents.defaults.temperature,
+        context_window=config.agents.defaults.context_window,
     )
     
     # Set cron callback (needs agent)
@@ -353,17 +359,26 @@ def gateway(
     # Create heartbeat service
     async def on_heartbeat(prompt: str) -> str:
         """Execute heartbeat through the agent."""
-        return await agent.process_direct(prompt, session_key="heartbeat")
-    
+        hb = config.heartbeat
+        channel = hb.channel or "cli"
+        chat_id = hb.chat_id or "direct"
+        return await agent.process_direct(
+            prompt,
+            session_key=f"heartbeat:{channel}:{chat_id}",
+            channel=channel,
+            chat_id=chat_id,
+        )
+
     heartbeat = HeartbeatService(
         workspace=config.workspace_path,
         on_heartbeat=on_heartbeat,
-        interval_s=30 * 60,  # 30 minutes
-        enabled=True
+        interval_s=config.heartbeat.interval_minutes * 60,
+        enabled=config.heartbeat.enabled,
+        event_bus=event_bus,
     )
     
     # Create channel manager
-    channels = ChannelManager(config, bus, session_manager=session_manager)
+    channels = ChannelManager(config, bus, session_manager=session_manager, event_bus=event_bus)
     
     if channels.enabled_channels:
         console.print(f"[green]✓[/green] Channels enabled: {', '.join(channels.enabled_channels)}")
@@ -374,7 +389,10 @@ def gateway(
     if cron_status["jobs"] > 0:
         console.print(f"[green]✓[/green] Cron: {cron_status['jobs']} scheduled jobs")
     
-    console.print(f"[green]✓[/green] Heartbeat: every 30m")
+    if config.heartbeat.enabled:
+        console.print(f"[green]✓[/green] Heartbeat: every {config.heartbeat.interval_minutes}m")
+    else:
+        console.print("[dim]Heartbeat: disabled[/dim]")
     
     async def run():
         try:
@@ -428,9 +446,13 @@ def agent(
         bus=bus,
         provider=provider,
         workspace=config.workspace_path,
+        model=config.agents.defaults.model or None,
         brave_api_key=config.tools.web.search.api_key or None,
         exec_config=config.tools.exec,
         restrict_to_workspace=config.tools.restrict_to_workspace,
+        max_tokens=config.agents.defaults.max_tokens,
+        temperature=config.agents.defaults.temperature,
+        context_window=config.agents.defaults.context_window,
     )
     
     # Show spinner when logs are off (no output to miss); skip when logs are on
@@ -820,7 +842,8 @@ def status():
     if config_path.exists():
         from nanobot.providers.registry import PROVIDERS
 
-        console.print(f"Model: {config.agents.defaults.model}")
+        model_display = config.agents.defaults.model or "[dim]auto-discover[/dim]"
+        console.print(f"Model: {model_display}")
         
         # Check API keys from registry
         for spec in PROVIDERS:

@@ -49,7 +49,7 @@ Then edit `~/.nanobot/config.json`:
 }
 ```
 
-For local models with vLLM:
+For local models with vLLM (model and context window are auto-discovered):
 
 ```json
 {
@@ -61,11 +61,13 @@ For local models with vLLM:
   },
   "agents": {
     "defaults": {
-      "model": "meta-llama/Llama-3.1-8B-Instruct"
+      "maxTokens": 4096
     }
   }
 }
 ```
+
+No `model` field needed — nanobot queries vLLM's `/v1/models` endpoint to discover the model name and context window automatically. See [Providers](/guide/providers) for details.
 
 ## Chat
 

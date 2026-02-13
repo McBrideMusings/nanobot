@@ -29,7 +29,7 @@ export default defineConfig({
       { text: 'Guide', link: '/guide/getting-started' },
       { text: 'Architecture', link: '/architecture/overview' },
       { text: 'Development', link: '/development/setup' },
-      { text: 'Features', link: '/features/mcp-support' },
+      { text: 'Features', link: '/features/chat-app-roadmap' },
     ],
 
     sidebar: {
@@ -67,6 +67,17 @@ export default defineConfig({
         },
       ],
       '/features/': [
+        {
+          text: 'Chat App',
+          items: [
+            { text: 'Roadmap', link: '/features/chat-app-roadmap' },
+            { text: 'Phase 1 — Agent Observability', link: '/features/chat-app/phase-1-agent-observability' },
+            { text: 'Phase 2 — Core Chat Polish', link: '/features/chat-app/phase-2-core-chat-polish' },
+            { text: 'Phase 3 — Rich Interactions', link: '/features/chat-app/phase-3-rich-interactions' },
+            { text: 'Phase 4 — Workspace & Intelligence', link: '/features/chat-app/phase-4-workspace-intelligence' },
+            { text: 'Phase 5 — Deferred / Research', link: '/features/chat-app/phase-5-deferred-research' },
+          ],
+        },
         {
           text: 'Planned Features',
           items: [
