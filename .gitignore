@@ -24,3 +24,7 @@ botpy.log
 .DS_Store
 *.fuse*
 tmp/
+skills/
+logs.sh
+run.sh
+sync-skills.sh
