@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AgentEventRecord, AgentStatus, ChatMessage, DebugFrame, IncomingMessage, LinkPreviewData,
+  WorkspaceEntry,
 } from '../types';
 
 const MAX_FRAMES = 500;
@@ -22,6 +23,12 @@ export function useWebSocket(serverUrl: string, streamingEnabled: boolean = true
   const [agentStatusDetail, setAgentStatusDetail] = useState('');
   const [events, setEvents] = useState<AgentEventRecord[]>([]);
   const [linkPreviews, setLinkPreviews] = useState<Map<string, LinkPreviewData>>(new Map());
+
+  // Workspace state
+  const [workspaceEntries, setWorkspaceEntries] = useState<Map<string, WorkspaceEntry[]>>(new Map());
+  const [workspaceFileContent, setWorkspaceFileContent] = useState<{ path: string; content: string } | null>(null);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+  const [workspaceSaveStatus, setWorkspaceSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectDelay = useRef(1000);
@@ -48,6 +55,29 @@ export function useWebSocket(serverUrl: string, streamingEnabled: boolean = true
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       const payload = JSON.stringify({ type: 'link_preview', url });
       wsRef.current.send(payload);
+    }
+  }, []);
+
+  // Workspace send functions
+  const workspaceList = useCallback((path: string) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      setWorkspaceError(null);
+      wsRef.current.send(JSON.stringify({ type: 'workspace_list', path }));
+    }
+  }, []);
+
+  const workspaceRead = useCallback((path: string) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      setWorkspaceError(null);
+      setWorkspaceFileContent(null);
+      wsRef.current.send(JSON.stringify({ type: 'workspace_read', path }));
+    }
+  }, []);
+
+  const workspaceWrite = useCallback((path: string, content: string) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      setWorkspaceSaveStatus('saving');
+      wsRef.current.send(JSON.stringify({ type: 'workspace_write', path, content }));
     }
   }, []);
 
@@ -203,6 +233,38 @@ export function useWebSocket(serverUrl: string, streamingEnabled: boolean = true
           break;
         }
 
+        case 'workspace_list_result': {
+          if (parsed.error) {
+            setWorkspaceError(parsed.error);
+          } else {
+            setWorkspaceEntries(prev => new Map(prev).set(parsed.path, parsed.entries));
+            setWorkspaceError(null);
+          }
+          break;
+        }
+
+        case 'workspace_read_result': {
+          if (parsed.error) {
+            setWorkspaceError(parsed.error);
+          } else {
+            setWorkspaceFileContent({ path: parsed.path, content: parsed.content });
+            setWorkspaceError(null);
+          }
+          break;
+        }
+
+        case 'workspace_write_result': {
+          if (parsed.error) {
+            setWorkspaceSaveStatus('error');
+            setWorkspaceError(parsed.error);
+          } else {
+            setWorkspaceSaveStatus('saved');
+            setWorkspaceError(null);
+            setTimeout(() => setWorkspaceSaveStatus('idle'), 2000);
+          }
+          break;
+        }
+
         case 'event': {
           if ('category' in parsed && 'event' in parsed) {
             const record: AgentEventRecord = {
@@ -343,5 +405,12 @@ export function useWebSocket(serverUrl: string, streamingEnabled: boolean = true
     clearFrames,
     requestLinkPreview,
     linkPreviews,
+    workspaceEntries,
+    workspaceFileContent,
+    workspaceError,
+    workspaceSaveStatus,
+    workspaceList,
+    workspaceRead,
+    workspaceWrite,
   };
 }

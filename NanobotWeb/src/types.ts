@@ -52,10 +52,58 @@ export interface IncomingLinkPreviewResult {
   favicon?: string;
 }
 
+// Workspace messages
+
+export interface WorkspaceEntry {
+  name: string;
+  is_dir: boolean;
+  size: number;
+}
+
+export interface OutgoingWorkspaceList {
+  type: 'workspace_list';
+  path: string;
+}
+
+export interface OutgoingWorkspaceRead {
+  type: 'workspace_read';
+  path: string;
+}
+
+export interface OutgoingWorkspaceWrite {
+  type: 'workspace_write';
+  path: string;
+  content: string;
+}
+
+export interface IncomingWorkspaceListResult {
+  type: 'workspace_list_result';
+  path: string;
+  entries: WorkspaceEntry[];
+  error?: string;
+}
+
+export interface IncomingWorkspaceReadResult {
+  type: 'workspace_read_result';
+  path: string;
+  content: string;
+  error?: string;
+}
+
+export interface IncomingWorkspaceWriteResult {
+  type: 'workspace_write_result';
+  path: string;
+  success: boolean;
+  error?: string;
+}
+
+export type SidebarTab = 'debug' | 'workspace';
+
 export type IncomingMessage =
   | IncomingResponse | IncomingHistory | IncomingError | IncomingEvent
   | IncomingStreamStart | IncomingStreamChunk | IncomingStreamEnd
-  | IncomingLinkPreviewResult;
+  | IncomingLinkPreviewResult
+  | IncomingWorkspaceListResult | IncomingWorkspaceReadResult | IncomingWorkspaceWriteResult;
 
 // Agent observability
 

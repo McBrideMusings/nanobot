@@ -13,10 +13,11 @@ Agent Loop
     ↓ builds context
 Context Builder (system prompt + memory + skills + history)
     ↓
-LLM Provider (via LiteLLM)
-    ↓ response with tool calls
+LLM Provider (via LiteLLM, streaming)
+    ↓ response chunks + tool calls
 Tool Registry → execute tools → loop back to LLM
     ↓ final response
+Event Bus → stream/agent/heartbeat events → WebSocket clients
 Message Bus
     ↓ OutboundMessage
 Channel → User
@@ -32,6 +33,7 @@ Channel → User
 | **SkillsLoader** | `agent/skills.py` | Loads skills from workspace |
 | **SessionManager** | `session/manager.py` | Conversation history per channel:chat_id |
 | **MessageBus** | `bus/queue.py` | Event routing between components |
+| **EventBus** | `bus/event_bus.py` | Pub/sub for real-time agent observability |
 | **ProvidersRegistry** | `providers/registry.py` | LLM provider configuration |
 | **ChannelManager** | `channels/manager.py` | Channel lifecycle |
 | **SubagentManager** | `agent/subagent.py` | Background task execution |
@@ -50,7 +52,7 @@ nanobot/
 │   ├── subagent.py # Background tasks
 │   └── tools/      # Built-in tools
 ├── channels/       # Chat integrations
-├── bus/            # Message routing
+├── bus/            # Message routing + event pub/sub
 ├── cron/           # Scheduled tasks
 ├── heartbeat/      # Proactive wake-up
 ├── providers/      # LLM providers

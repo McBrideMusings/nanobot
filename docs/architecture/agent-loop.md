@@ -13,7 +13,8 @@ The agent loop is the heart of nanobot. It receives messages, builds context, ca
 5. **Resolve model & context window** — auto-discover from provider or use config overrides
 6. **Truncate history** — drop oldest history messages to fit within the context window budget
 7. **Agent iteration loop** (max 20 iterations):
-   - Call LLM with messages + tool definitions
+   - Call LLM via streaming (`stream_chat()`), emitting `stream_start`, `stream_chunk`, `stream_end` events via the EventBus as tokens arrive
+   - Assemble the final `LLMResponse` from accumulated chunks
    - If context overflow error → re-discover capabilities, re-truncate, retry once
    - If response contains tool calls → execute each tool, add results, continue loop
    - If no tool calls → break with final text response
@@ -74,6 +75,34 @@ The agent automatically manages the context window to prevent overflow errors:
 Token estimation uses `len(json.dumps(messages)) // 3` (~3 chars per token) as a conservative heuristic. No external tokenizer dependency.
 
 Config overrides (`contextWindow`, `maxTokens`) take priority over auto-discovered values. See [Providers](/guide/providers) for configuration.
+
+## Streaming
+
+The agent loop streams LLM output to connected clients in real-time via the EventBus.
+
+`_call_llm_streaming()` wraps `provider.stream_chat()` and:
+1. Generates a unique `msg_id` per LLM call
+2. Emits `stream_start` with the `msg_id`
+3. As content deltas arrive, emits `stream_chunk` events
+4. After the stream completes, emits `stream_end`
+5. Returns the assembled `LLMResponse` (same shape as non-streaming)
+
+The API channel (`channels/api.py`) translates these events into WebSocket wire protocol messages. Other channels ignore stream events — they only see the final `OutboundMessage`.
+
+`LLMProvider.stream_chat()` has a default implementation that falls back to non-streaming `chat()`, so providers that don't support streaming still work.
+
+## Event Bus
+
+The `EventBus` (`bus/event_bus.py`) is a lightweight pub/sub for agent observability. Events are fire-and-forget with no persistence or queuing.
+
+Event categories:
+- `agent` — `thinking_started`, `tool_call`, `tool_result`, `thinking_finished`
+- `stream` — `stream_start`, `stream_chunk`, `stream_end`
+- `heartbeat` — `tick`
+- `subagent` — `spawned`, `completed`
+- `cron` — `executed`
+
+The API channel subscribes to the EventBus and broadcasts events to all connected WebSocket clients.
 
 ## Error Handling
 

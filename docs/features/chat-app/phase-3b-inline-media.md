@@ -1,0 +1,11 @@
+# Phase 3b — Inline Media
+
+**Scope:** Client UI
+
+## Receiving Media Inline
+
+Render images and video inline in chat when the bot includes media URLs. The `OutboundMessage.media` field already exists but is unused.
+
+- Images: thumbnail in the bubble, tap to view full-size.
+- Video: inline player with playback controls.
+- No upload pipeline needed — this is display-only for bot-provided URLs.

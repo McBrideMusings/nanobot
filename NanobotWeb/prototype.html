@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NanobotWeb — Prototype</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.6.2/css/bootstrap.min.css">
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: #1a1a1a; }
+    #root { display: flex; flex-direction: column; min-height: 100vh; }
+
+    .form-control {
+      background-color: rgba(20, 20, 20, 0.8);
+      border-color: rgba(255, 255, 255, 0.15);
+      color: #fff; font-size: 0.82rem;
+    }
+    .form-control:focus {
+      background-color: rgba(20, 20, 20, 0.9);
+      border-color: rgba(255, 255, 255, 0.3);
+      color: #fff; box-shadow: 0 0 0 0.2rem rgba(255, 255, 255, 0.1);
+    }
+    .form-control::placeholder { color: #666; }
+    .modal-content { background-color: #2a2a2a; color: #fff; border-color: rgba(255,255,255,0.1); }
+    .modal-header { border-bottom-color: rgba(255,255,255,0.1); }
+    .modal-footer { border-top-color: rgba(255,255,255,0.1); }
+    .close { color: #fff; text-shadow: none; }
+    .close:hover { color: #ccc; }
+    .text-muted { color: #999 !important; }
+
+    .tab-strip {
+      display: flex; align-items: flex-end; gap: 3px;
+      padding-top: 0;
+      position: sticky; top: 0; z-index: 11; background: #1a1a1a;
+    }
+    .tab-folder {
+      padding: 0.45rem 1.1rem 0.4rem;
+      cursor: pointer; user-select: none;
+      font-size: 0.82rem; font-weight: 600; color: #777;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-bottom: none; border-radius: 6px 6px 0 0;
+      position: relative; transition: all 0.12s;
+    }
+    .tab-folder:hover { color: #bbb; background: rgba(255,255,255,0.05); }
+    .tab-folder.active {
+      color: #fff; background: rgba(255,255,255,0.06);
+      border-color: rgba(255,255,255,0.15); z-index: 2;
+    }
+    .tab-folder.active::after {
+      content: ''; position: absolute; bottom: -1px; left: 0; right: 0;
+      height: 1px; background: #1f1f1f;
+    }
+    .tab-folder.disabled { opacity: 0.4; pointer-events: none; }
+
+    .info-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.4rem 0.75rem;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 0 4px 0 0;
+      position: sticky; top: 38px; z-index: 10;
+    }
+    .info-stats { display: flex; align-items: center; gap: 0.75rem; font-size: 0.75rem; color: #999; }
+    .info-stat-sep { color: rgba(255,255,255,0.15); }
+    .info-actions { display: flex; align-items: center; gap: 0.4rem; }
+
+    .act-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 24px; height: 24px; border-radius: 4px;
+      cursor: pointer; font-size: 0.78rem;
+      padding: 0; transition: all 0.15s; flex-shrink: 0;
+    }
+    .act-btn:disabled { opacity: 0.3; cursor: default; }
+    .act-del { background: rgba(248,113,113,0.15); border: 1px solid rgba(248,113,113,0.35); color: #f87171; }
+    .act-del:hover { background: rgba(248,113,113,0.3); color: #fca5a5; }
+  </style>
+
+  <style>
+    /* ===== NANOBOT LAYOUT ===== */
+    .nano-app {
+      display: flex; flex-direction: column; height: 100vh;
+      color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    /* Top Bar */
+    .nano-topbar {
+      display: flex; align-items: center; gap: 12px;
+      padding: 6px 16px; height: 40px; flex-shrink: 0;
+      background: #1e1e1e; border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .nano-conn {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 0.78rem; font-weight: 600; white-space: nowrap;
+    }
+    .nano-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .nano-dot.on { background: #4ade80; box-shadow: 0 0 6px rgba(74,222,128,0.4); }
+    .nano-dot.off { background: #f87171; }
+    .nano-url {
+      font-size: 0.75rem; color: #666;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .nano-topbar-spacer { flex: 1; }
+    .nano-topbar-actions { display: flex; align-items: center; gap: 6px; }
+    .nano-topbar-btn {
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+      color: #999; padding: 2px 10px; border-radius: 4px; cursor: pointer;
+      font-size: 0.72rem; transition: all 0.15s;
+    }
+    .nano-topbar-btn:hover { color: #ddd; background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
+
+    /* Agent Status */
+    .nano-status {
+      height: 24px; display: flex; align-items: center; justify-content: center;
+      font-size: 0.72rem; font-weight: 500; flex-shrink: 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      transition: background 0.3s, color 0.3s;
+    }
+    .nano-status.idle { background: #1a1a1a; color: #555; }
+    .nano-status.thinking { background: rgba(74,158,255,0.08); color: #60a5fa; animation: pulse 1.5s ease-in-out infinite; }
+    .nano-status.tool { background: rgba(74,158,255,0.06); color: #60a5fa; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+    /* Main layout */
+    .nano-main { display: flex; flex: 1; min-height: 0; }
+
+    /* ===== CHAT ===== */
+    .nano-chat { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .nano-messages {
+      flex: 1; overflow-y: auto; padding: 20px 24px;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .nano-msg { display: flex; flex-direction: column; max-width: 75%; }
+    .nano-msg.user { align-self: flex-end; align-items: flex-end; }
+    .nano-msg.bot { align-self: flex-start; align-items: flex-start; }
+    .nano-msg-bubble {
+      padding: 8px 14px; border-radius: 14px;
+      font-size: 0.88rem; line-height: 1.5;
+      word-wrap: break-word; white-space: pre-wrap;
+    }
+    .nano-msg.user .nano-msg-bubble {
+      background: #1a5fb4; color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+    .nano-msg.bot .nano-msg-bubble {
+      background: #2a2a2a; color: #e0e0e0;
+      border: 1px solid rgba(255,255,255,0.06);
+      border-bottom-left-radius: 4px;
+    }
+    .nano-msg-bubble code {
+      background: rgba(0,0,0,0.3); padding: 1px 5px; border-radius: 3px;
+      font-family: 'SF Mono', 'Fira Code', Consolas, monospace; font-size: 0.84em;
+    }
+    .nano-msg-bubble strong { font-weight: 700; color: #fff; }
+    .nano-msg-time {
+      font-size: 0.65rem; color: #555; margin-top: 2px;
+      padding: 0 4px;
+    }
+
+    .nano-input-area {
+      padding: 12px 24px 16px; flex-shrink: 0;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      background: #1e1e1e;
+    }
+    .nano-input-row { display: flex; gap: 8px; }
+    .nano-input {
+      flex: 1; resize: none; outline: none;
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
+      color: #e0e0e0; padding: 8px 14px; border-radius: 10px;
+      font-size: 0.88rem; font-family: inherit; line-height: 1.4;
+    }
+    .nano-input:focus { border-color: rgba(74,158,255,0.5); background: rgba(255,255,255,0.06); }
+    .nano-input::placeholder { color: #555; }
+    .nano-send {
+      background: #1a5fb4; color: #fff; border: none;
+      padding: 8px 18px; border-radius: 10px; cursor: pointer;
+      font-size: 0.84rem; font-weight: 600; align-self: flex-end;
+      transition: background 0.15s;
+    }
+    .nano-send:hover { background: #2b71c7; }
+    .nano-send:disabled { opacity: 0.3; cursor: default; }
+    .nano-stop {
+      background: rgba(248,113,113,0.15); color: #f87171; border: 1px solid rgba(248,113,113,0.35);
+      padding: 8px 18px; border-radius: 10px; cursor: pointer;
+      font-size: 0.84rem; font-weight: 600; align-self: flex-end;
+      transition: all 0.15s;
+    }
+    .nano-stop:hover { background: rgba(248,113,113,0.3); color: #fca5a5; }
+
+    /* ===== SIDEBAR ===== */
+    .nano-sidebar {
+      width: 380px; flex-shrink: 0;
+      display: flex; flex-direction: column;
+      border-left: 1px solid rgba(255,255,255,0.08);
+      background: #1e1e1e;
+    }
+    .nano-sidebar-header {
+      display: flex; align-items: flex-end;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      padding: 0 4px;
+    }
+    .nano-sidebar-header .tab-strip { padding: 6px 0 0; flex: 1; }
+    .nano-sidebar-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+    .nano-topbar-btn.active { color: #e0e0e0; background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
+
+    /* ===== DEBUG LOG ===== */
+    .nano-log { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+    .nano-log-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 12px; border-bottom: 1px solid rgba(255,255,255,0.06);
+      flex-shrink: 0;
+    }
+    .nano-log-header span { font-size: 0.72rem; color: #666; }
+    .nano-log-frames {
+      flex: 1; overflow-y: auto; padding: 8px 12px;
+      font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+      font-size: 0.72rem; line-height: 1.7;
+    }
+    .nano-frame { display: flex; gap: 6px; }
+    .nano-frame-time { color: #444; white-space: nowrap; flex-shrink: 0; }
+    .nano-frame-dir { width: 12px; text-align: center; flex-shrink: 0; }
+    .nano-frame-dir.out { color: #60a5fa; }
+    .nano-frame-dir.in { color: #4ade80; }
+    .nano-frame-body {
+      color: #777; word-break: break-all; white-space: pre-wrap;
+      min-width: 0;
+    }
+    .nano-frame-type {
+      display: inline; padding: 0 4px; border-radius: 2px;
+      font-weight: 600;
+    }
+    .nano-frame-type.t-message { color: #60a5fa; }
+    .nano-frame-type.t-response { color: #4ade80; }
+    .nano-frame-type.t-event { color: #fbbf24; }
+    .nano-frame-type.t-stream { color: #a78bfa; }
+    .nano-frame-type.t-error { color: #f87171; }
+
+    /* ===== WORKSPACE ===== */
+    .nano-ws { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+    /* Breadcrumb */
+    .nano-breadcrumb {
+      display: flex; align-items: center; gap: 2px;
+      padding: 8px 12px; flex-shrink: 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      font-size: 0.75rem; overflow: hidden;
+    }
+    .nano-bc-seg {
+      color: #666; cursor: pointer; white-space: nowrap;
+      padding: 1px 3px; border-radius: 3px;
+    }
+    .nano-bc-seg:hover { color: #bbb; background: rgba(255,255,255,0.06); }
+    .nano-bc-seg.current { color: #ccc; cursor: default; }
+    .nano-bc-seg.current:hover { background: none; }
+    .nano-bc-sep { color: #444; margin: 0 1px; }
+
+    /* File list */
+    .nano-filelist { flex: 1; overflow-y: auto; padding: 2px 0; }
+    .nano-fentry {
+      display: flex; align-items: center; gap: 8px;
+      padding: 4px 14px; cursor: pointer; font-size: 0.82rem;
+      transition: background 0.1s;
+    }
+    .nano-fentry:hover { background: rgba(255,255,255,0.04); }
+    .nano-fentry-icon { width: 18px; text-align: center; flex-shrink: 0; font-size: 0.8rem; }
+    .nano-fentry-icon.dir { color: #60a5fa; }
+    .nano-fentry-icon.file { color: #666; }
+    .nano-fentry-icon.up { color: #888; }
+    .nano-fentry-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ccc; }
+    .nano-fentry.is-dir .nano-fentry-name { color: #e0e0e0; font-weight: 500; }
+    .nano-fentry-size { font-size: 0.7rem; color: #555; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+    .nano-fentry-empty { color: #555; font-style: italic; cursor: default; padding: 16px 14px; font-size: 0.8rem; }
+    .nano-fentry-empty:hover { background: none; }
+
+    /* Editor */
+    .nano-editor { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+    .nano-editor-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 12px; flex-shrink: 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .nano-editor-back {
+      background: none; border: 1px solid rgba(255,255,255,0.1);
+      color: #888; padding: 2px 8px; border-radius: 4px;
+      cursor: pointer; font-size: 0.75rem;
+    }
+    .nano-editor-back:hover { color: #ddd; border-color: rgba(255,255,255,0.25); }
+    .nano-editor-path {
+      flex: 1; font-size: 0.8rem; font-weight: 500; color: #ccc;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .nano-editor-status { font-size: 0.7rem; }
+    .nano-editor-status.saved { color: #4ade80; }
+    .nano-editor-status.saving { color: #fbbf24; }
+    .nano-editor-save {
+      background: #1a5fb4; color: #fff; border: none;
+      padding: 2px 12px; border-radius: 4px; cursor: pointer;
+      font-size: 0.72rem; font-weight: 600;
+    }
+    .nano-editor-save:hover { background: #2b71c7; }
+    .nano-editor-save:disabled { opacity: 0.3; cursor: default; }
+    .nano-editor-textarea {
+      flex: 1; resize: none; outline: none;
+      background: #141414; color: #ccc; border: none;
+      padding: 12px 16px;
+      font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+      font-size: 0.8rem; line-height: 1.65;
+      tab-size: 2;
+    }
+    .nano-editor-textarea::selection { background: rgba(74,158,255,0.3); }
+
+    /* WS error */
+    .nano-ws-error {
+      padding: 6px 12px; font-size: 0.75rem;
+      color: #fca5a5; background: rgba(248,113,113,0.08);
+      border-bottom: 1px solid rgba(248,113,113,0.15);
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/17.0.2/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/17.0.2/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-bootstrap/1.6.7/react-bootstrap.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // ============================================================
+    // FAKE DATA
+    // ============================================================
+
+    const WS_URL = 'ws://100.114.249.118:18790';
+
+    function ts(h, m, s) {
+      const d = new Date(); d.setHours(h, m, s, 0); return d;
+    }
+
+    const SEED_MESSAGES = [
+      { id: 'm1', content: "Hey, what's in my workspace right now?", isFromUser: true, timestamp: ts(11, 42, 10) },
+      { id: 'm2', content: "Your workspace contains:\n\n**Bootstrap files** — SOUL.md, USER.md, IDENTITY.md, AGENTS.md, TOOLS.md, HEARTBEAT.md\n**memory/** — Long-term memory + daily notes\n**skills/** — Skill definitions (brainstorming, debugging, etc.)\n**sessions/** — Conversation history per channel\n\nWant me to look at anything specific?", isFromUser: false, timestamp: ts(11, 42, 14) },
+      { id: 'm3', content: "Show me today's memory", isFromUser: true, timestamp: ts(11, 43, 1) },
+      { id: 'm4', content: "Here's `memory/2026-02-14.md`:\n\n```\n# February 14, 2026\n\n## Tasks\n- [x] Review Phase 4a workspace inspector plan\n- [x] Implement backend workspace handlers\n- [ ] Iterate on web UI design\n- [ ] Update SOUL.md personality section\n\n## Notes\n- Pierce wants a more polished, tabbed sidebar UI\n- CodeMirror 6 integrated for file editing\n- Sidebar replaces fixed debug panel\n```", isFromUser: false, timestamp: ts(11, 43, 5) },
+      { id: 'm5', content: "Add a note that we're building a standalone prototype for design iteration", isFromUser: true, timestamp: ts(11, 44, 30) },
+      { id: 'm6', content: "Done — added to `memory/2026-02-14.md`:\n\n> Building standalone HTML prototype for rapid UI iteration (React 17 + Bootstrap 4, no build step)", isFromUser: false, timestamp: ts(11, 44, 33) },
+    ];
+
+    function mkFrame(dir, type, body, time) {
+      return { id: Math.random().toString(36).slice(2, 10), dir, type, body, timestamp: time };
+    }
+
+    const SEED_FRAMES = [
+      mkFrame('out', 'message', '{"type":"message","content":"Hey, what\'s in my workspace right now?"}', ts(11,42,10)),
+      mkFrame('in', 'event', '{"type":"event","category":"agent","event":"thinking_started","data":{}}', ts(11,42,10)),
+      mkFrame('in', 'event', '{"type":"event","category":"agent","event":"tool_call","data":{"name":"list_dir","args":{"path":"."}}}', ts(11,42,11)),
+      mkFrame('in', 'stream_start', '{"type":"stream_start","id":"s-001"}', ts(11,42,12)),
+      mkFrame('in', 'stream_end', '{"type":"stream_end","id":"s-001"}', ts(11,42,14)),
+      mkFrame('in', 'response', '{"type":"response","content":"Your workspace contains..."}', ts(11,42,14)),
+      mkFrame('out', 'message', '{"type":"message","content":"Show me today\'s memory"}', ts(11,43,1)),
+      mkFrame('in', 'event', '{"type":"event","category":"agent","event":"thinking_started","data":{}}', ts(11,43,1)),
+      mkFrame('in', 'event', '{"type":"event","category":"agent","event":"tool_call","data":{"name":"read_file","args":{"path":"memory/2026-02-14.md"}}}', ts(11,43,2)),
+      mkFrame('in', 'response', '{"type":"response","content":"Here\'s memory/2026-02-14.md:..."}', ts(11,43,5)),
+      mkFrame('out', 'message', '{"type":"message","content":"Add a note that we\'re building a standalone prototype..."}', ts(11,44,30)),
+      mkFrame('in', 'event', '{"type":"event","category":"agent","event":"tool_call","data":{"name":"edit_file","args":{"path":"memory/2026-02-14.md"}}}', ts(11,44,31)),
+      mkFrame('in', 'response', '{"type":"response","content":"Done — added to memory/2026-02-14.md"}', ts(11,44,33)),
+    ];
+
+    const FAKE_FILES = {
+      '': [
+        { name: 'memory', is_dir: true, size: 0 },
+        { name: 'sessions', is_dir: true, size: 0 },
+        { name: 'skills', is_dir: true, size: 0 },
+        { name: 'push', is_dir: true, size: 0 },
+        { name: 'AGENTS.md', is_dir: false, size: 2103 },
+        { name: 'HEARTBEAT.md', is_dir: false, size: 234 },
+        { name: 'IDENTITY.md', is_dir: false, size: 891 },
+        { name: 'SOUL.md', is_dir: false, size: 1247 },
+        { name: 'TOOLS.md', is_dir: false, size: 1654 },
+        { name: 'USER.md', is_dir: false, size: 532 },
+      ],
+      'memory': [
+        { name: 'MEMORY.md', is_dir: false, size: 3421 },
+        { name: '2026-02-14.md', is_dir: false, size: 1876 },
+        { name: '2026-02-13.md', is_dir: false, size: 1245 },
+        { name: '2026-02-12.md', is_dir: false, size: 943 },
+      ],
+      'skills': [
+        { name: 'brainstorming', is_dir: true, size: 0 },
+        { name: 'debugging', is_dir: true, size: 0 },
+        { name: 'using-superpowers', is_dir: true, size: 0 },
+      ],
+      'skills/brainstorming': [
+        { name: 'SKILL.md', is_dir: false, size: 2890 },
+      ],
+      'skills/debugging': [
+        { name: 'SKILL.md', is_dir: false, size: 3150 },
+      ],
+      'skills/using-superpowers': [
+        { name: 'SKILL.md', is_dir: false, size: 4210 },
+      ],
+      'sessions': [
+        { name: 'api_default.json', is_dir: false, size: 48200 },
+        { name: 'telegram_294817.json', is_dir: false, size: 12400 },
+      ],
+      'push': [
+        { name: 'vapid.json', is_dir: false, size: 312 },
+        { name: 'subscriptions.json', is_dir: false, size: 1840 },
+      ],
+    };
+
+    const FAKE_CONTENTS = {
+      'SOUL.md': `# Soul\n\nYou are Nanobot, Pierce's personal AI assistant. You run on home infrastructure (UnRAID server) and are always available over Tailscale.\n\n## Core Traits\n- Helpful, proactive, technically skilled\n- Concise and direct — no filler\n- Code-first when appropriate\n- Respectful of Pierce's time and attention\n\n## Communication Style\n- Lead with the answer, then explain\n- Use markdown formatting in longer responses\n- Ask clarifying questions when requirements are ambiguous\n- Never apologize unnecessarily\n\n## Boundaries\n- Don't make changes without being asked\n- Don't add features beyond what's requested\n- Keep solutions simple — avoid over-engineering`,
+      'USER.md': `# User Profile\n\n**Name:** Pierce\n**Role:** Software engineer, AI tinkerer\n**Location:** Home office\n\n## Preferences\n- Editor: VS Code + Claude Code CLI\n- Shell: zsh on macOS, bash on UnRAID\n- Infrastructure: UnRAID, Docker, Tailscale\n- Coffee: black\n\n## Current Projects\n- NanobotWeb (React chat client)\n- vLLM local inference setup\n- Home automation experiments`,
+      'IDENTITY.md': `# Identity\n\n**Name:** Nanobot\n**Version:** 0.3.0\n**Host:** UnRAID (100.114.249.118)\n**Gateway:** ws://100.114.249.118:18790\n**Model:** Qwen 2.5 72B via vLLM\n\n## Capabilities\n- File read/write/edit\n- Web search & fetch\n- Shell command execution\n- Background tasks (spawn)\n- Scheduled tasks (cron)\n- Memory & learning\n- Multi-channel (API, Telegram, Discord)`,
+      'AGENTS.md': `# Agents\n\n## Default Agent\nThe primary conversational agent. Handles all user interactions,\ntool calls, and response generation.\n\n## Subagents\nBackground workers spawned via the \`spawn\` tool.\nRun isolated tasks and announce results back to the\nmain agent via system messages.\n\n## Configuration\n- max_tool_iterations: 20\n- temperature: 0.7\n- max_tokens: 4096`,
+      'TOOLS.md': `# Tools\n\n## File Tools\n- \`read_file\` — Read file contents\n- \`write_file\` — Write/create files\n- \`edit_file\` — Search & replace edits\n- \`list_dir\` — List directory contents\n\n## System Tools\n- \`exec\` — Execute shell commands\n- \`web_search\` — Search the web\n- \`web_fetch\` — Fetch URL content\n\n## Communication\n- \`message\` — Send message to a channel\n- \`spawn\` — Launch background subagent\n- \`cron\` — Schedule recurring tasks`,
+      'HEARTBEAT.md': `# Heartbeat Tasks\n\n- [ ] Check disk space on /mnt/user\n- [ ] Verify vLLM backend is responsive\n- [ ] Summarize unread notifications`,
+      'memory/MEMORY.md': `# Long-term Memory\n\n## Key Facts\n- Pierce uses UnRAID for home infrastructure\n- vLLM backend at http://100.114.249.118:8000/v1\n- Preferred editor: VS Code + Claude Code\n- Working hours: flexible, usually 9am-6pm\n- Coffee: black, no sugar\n\n## Architecture Decisions\n- NanobotWeb uses React 19 + Vite\n- WebSocket for all real-time communication\n- No REST API layer — everything over WS\n- CodeMirror 6 for file editing\n\n## Recent Context\n- Phase 4a: Workspace inspector & sidebar system\n- Iterating on UI design with standalone prototype\n- Bootstrap 4 dark theme for rapid prototyping`,
+      'memory/2026-02-14.md': `# February 14, 2026\n\n## Tasks\n- [x] Review Phase 4a workspace inspector plan\n- [x] Implement backend workspace handlers\n- [x] Wire protocol types for workspace messages\n- [x] Sidebar layout refactor\n- [ ] Iterate on web UI design\n- [ ] Update SOUL.md personality section\n\n## Notes\n- Pierce wants a more polished, tabbed sidebar UI\n- CodeMirror 6 integrated for workspace file editing\n- Sidebar replaces fixed two-panel debug layout\n- Building standalone HTML prototype for rapid UI iteration`,
+      'memory/2026-02-13.md': `# February 13, 2026\n\n## Tasks\n- [x] Phase 2 streaming + markdown rendering\n- [x] Link preview cards\n- [x] Web push notifications\n\n## Notes\n- Streaming works well, renders progressively\n- Link previews fetch OG metadata server-side\n- Push notifications via VAPID keys`,
+      'memory/2026-02-12.md': `# February 12, 2026\n\n## Tasks\n- [x] Initial NanobotWeb setup (Vite + React)\n- [x] WebSocket connection to gateway\n- [x] Basic chat UI with message history\n\n## Notes\n- First working version of the web client\n- Dark theme, two-panel layout (chat + debug)\n- Auto-reconnect with exponential backoff`,
+    };
+
+    // ============================================================
+    // UTILITIES
+    // ============================================================
+
+    let _id = 0;
+    function genId() { return 'id-' + (++_id) + '-' + Math.random().toString(36).slice(2, 6); }
+
+    function fmtTime(d) {
+      return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+    }
+    function fmtTimeSec(d) {
+      return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    }
+    function fmtSize(b) {
+      if (!b) return '';
+      if (b < 1024) return b + ' B';
+      if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' K';
+      return (b / (1024 * 1024)).toFixed(1) + ' M';
+    }
+
+    // Minimal inline markdown: **bold**, `code`, newlines
+    function renderInline(text) {
+      const parts = [];
+      const re = /(\*\*(.+?)\*\*|`([^`]+)`|```\n?([\s\S]*?)```)/g;
+      let last = 0;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        if (m.index > last) parts.push(text.slice(last, m.index));
+        if (m[2]) parts.push(React.createElement('strong', { key: m.index }, m[2]));
+        else if (m[3]) parts.push(React.createElement('code', { key: m.index }, m[3]));
+        else if (m[4] !== undefined) parts.push(React.createElement('pre', { key: m.index, style: {
+          background: 'rgba(0,0,0,0.3)', padding: '8px 12px', borderRadius: '6px',
+          margin: '4px 0', fontSize: '0.8rem', lineHeight: '1.6', overflowX: 'auto',
+        }}, React.createElement('code', null, m[4])));
+        last = m.index + m[0].length;
+      }
+      if (last < text.length) parts.push(text.slice(last));
+      return parts;
+    }
+
+    // ============================================================
+    // COMPONENTS
+    // ============================================================
+
+    function TopBar({ connected, sidebarOpen, onToggleSidebar }) {
+      return (
+        <div className="nano-topbar">
+          <div className="nano-conn">
+            <span className={'nano-dot ' + (connected ? 'on' : 'off')} />
+            <span style={{ color: connected ? '#4ade80' : '#f87171' }}>
+              {connected ? 'Connected' : 'Disconnected'}
+            </span>
+          </div>
+          <span className="nano-url">{WS_URL}</span>
+          <div className="nano-topbar-spacer" />
+          <div className="nano-topbar-actions">
+            <button className="nano-topbar-btn">Streaming ✓</button>
+            <button className="nano-topbar-btn">Push ✓</button>
+            <button
+              className={'nano-topbar-btn' + (sidebarOpen ? ' active' : '')}
+              onClick={onToggleSidebar}
+              title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+            >{sidebarOpen ? 'Sidebar ✕' : 'Sidebar'}</button>
+          </div>
+        </div>
+      );
+    }
+
+    function AgentStatus({ status, detail }) {
+      let label = 'Idle';
+      let cls = 'idle';
+      if (status === 'thinking') { label = 'Thinking…'; cls = 'thinking'; }
+      if (status === 'tool') { label = 'Tool: ' + detail; cls = 'tool'; }
+      return <div className={'nano-status ' + cls}>{label}</div>;
+    }
+
+    function Message({ msg }) {
+      const side = msg.isFromUser ? 'user' : 'bot';
+      return (
+        <div className={'nano-msg ' + side}>
+          <div className="nano-msg-bubble">
+            {msg.isFromUser ? msg.content : renderInline(msg.content)}
+          </div>
+          <span className="nano-msg-time">{fmtTime(msg.timestamp)}</span>
+        </div>
+      );
+    }
+
+    function ChatPanel({ messages, onSend, waiting, onStop }) {
+      const [text, setText] = useState('');
+      const listRef = useRef(null);
+      const inputRef = useRef(null);
+
+      useEffect(() => {
+        if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+      }, [messages]);
+
+      const send = () => {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        onSend(trimmed);
+        setText('');
+        if (inputRef.current) inputRef.current.focus();
+      };
+
+      const onKey = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+      };
+
+      return (
+        <div className="nano-chat">
+          <div className="nano-messages" ref={listRef}>
+            {messages.map(m => <Message key={m.id} msg={m} />)}
+            {waiting && (
+              <div className="nano-msg bot">
+                <div className="nano-msg-bubble" style={{ opacity: 0.5, fontStyle: 'italic' }}>
+                  Thinking…
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="nano-input-area">
+            <div className="nano-input-row">
+              <textarea
+                ref={inputRef}
+                className="nano-input"
+                rows={1}
+                placeholder="Message nanobot…"
+                value={text}
+                onChange={e => setText(e.target.value)}
+                onKeyDown={onKey}
+                disabled={waiting}
+              />
+              {waiting ? (
+                <button className="nano-stop" onClick={onStop}>Stop</button>
+              ) : (
+                <button className="nano-send" onClick={send} disabled={!text.trim()}>Send</button>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function DebugLog({ frames, onClear }) {
+      const listRef = useRef(null);
+      useEffect(() => {
+        if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+      }, [frames]);
+
+      function typeClass(type) {
+        if (type === 'message') return 't-message';
+        if (type === 'response') return 't-response';
+        if (type === 'event') return 't-event';
+        if (type.startsWith('stream')) return 't-stream';
+        if (type === 'error') return 't-error';
+        return '';
+      }
+
+      return (
+        <div className="nano-log">
+          <div className="nano-log-header">
+            <span>{frames.length} frames</span>
+            <button className="nano-topbar-btn" onClick={onClear} style={{ fontSize: '0.68rem', padding: '1px 8px' }}>
+              Clear
+            </button>
+          </div>
+          <div className="nano-log-frames" ref={listRef}>
+            {frames.map(f => (
+              <div className="nano-frame" key={f.id}>
+                <span className="nano-frame-time">{fmtTimeSec(f.timestamp)}</span>
+                <span className={'nano-frame-dir ' + f.dir}>{f.dir === 'out' ? '→' : '←'}</span>
+                <span className="nano-frame-body">
+                  <span className={'nano-frame-type ' + typeClass(f.type)}>{f.type}</span>
+                  {' '}{f.body.length > 120 ? f.body.slice(0, 120) + '…' : f.body}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function FileBrowser({ path, entries, onNavigate, onFileSelect }) {
+      const segments = path ? path.split('/').filter(Boolean) : [];
+
+      const goTo = (i) => {
+        if (i < 0) onNavigate('');
+        else onNavigate(segments.slice(0, i + 1).join('/'));
+      };
+
+      return (
+        <div className="nano-ws">
+          <div className="nano-breadcrumb">
+            <span
+              className={'nano-bc-seg' + (segments.length === 0 ? ' current' : '')}
+              onClick={() => goTo(-1)}
+            >workspace</span>
+            {segments.map((s, i) => (
+              <React.Fragment key={i}>
+                <span className="nano-bc-sep">/</span>
+                <span
+                  className={'nano-bc-seg' + (i === segments.length - 1 ? ' current' : '')}
+                  onClick={() => goTo(i)}
+                >{s}</span>
+              </React.Fragment>
+            ))}
+          </div>
+          <div className="nano-filelist">
+            {segments.length > 0 && (
+              <div className="nano-fentry" onClick={() => goTo(segments.length - 2)}>
+                <span className="nano-fentry-icon up">↩</span>
+                <span className="nano-fentry-name" style={{ color: '#888' }}>..</span>
+              </div>
+            )}
+            {entries.map(e => (
+              <div
+                key={e.name}
+                className={'nano-fentry' + (e.is_dir ? ' is-dir' : '')}
+                onClick={() => {
+                  const child = path ? path + '/' + e.name : e.name;
+                  e.is_dir ? onNavigate(child) : onFileSelect(child);
+                }}
+              >
+                <span className={'nano-fentry-icon ' + (e.is_dir ? 'dir' : 'file')}>
+                  {e.is_dir ? '▸' : '·'}
+                </span>
+                <span className="nano-fentry-name">{e.name}</span>
+                {!e.is_dir && <span className="nano-fentry-size">{fmtSize(e.size)}</span>}
+              </div>
+            ))}
+            {entries.length === 0 && (
+              <div className="nano-fentry-empty">Empty directory</div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    function FileEditor({ path, content, onSave, onClose }) {
+      const [text, setText] = useState(content);
+      const [dirty, setDirty] = useState(false);
+      const [saveStatus, setSaveStatus] = useState('');
+      const textareaRef = useRef(null);
+
+      useEffect(() => { setText(content); setDirty(false); setSaveStatus(''); }, [content, path]);
+
+      const handleChange = (e) => { setText(e.target.value); setDirty(true); setSaveStatus(''); };
+
+      const save = () => {
+        onSave(path, text);
+        setDirty(false);
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus(''), 2000);
+      };
+
+      const onKey = (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); save(); }
+        // Tab support
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          const ta = textareaRef.current;
+          const start = ta.selectionStart;
+          const end = ta.selectionEnd;
+          const val = ta.value;
+          setText(val.substring(0, start) + '  ' + val.substring(end));
+          setDirty(true);
+          setTimeout(() => { ta.selectionStart = ta.selectionEnd = start + 2; }, 0);
+        }
+      };
+
+      const filename = path.split('/').pop();
+
+      return (
+        <div className="nano-editor">
+          <div className="nano-editor-header">
+            <button className="nano-editor-back" onClick={onClose}>← Back</button>
+            <span className="nano-editor-path" title={path}>{filename}</span>
+            {saveStatus && <span className={'nano-editor-status ' + saveStatus}>{saveStatus === 'saved' ? 'Saved ✓' : 'Saving…'}</span>}
+            <button className="nano-editor-save" onClick={save} disabled={!dirty}>Save</button>
+          </div>
+          <textarea
+            ref={textareaRef}
+            className="nano-editor-textarea"
+            value={text}
+            onChange={handleChange}
+            onKeyDown={onKey}
+            spellCheck={false}
+          />
+        </div>
+      );
+    }
+
+    function WorkspacePanel({ files, contents, onUpdateContent }) {
+      const [path, setPath] = useState('');
+      const [editing, setEditing] = useState(null);
+
+      const entries = files[path] || [];
+
+      const handleFileSelect = (filePath) => {
+        if (contents[filePath] !== undefined) {
+          setEditing(filePath);
+        } else {
+          // Simulate unknown file
+          setEditing(filePath);
+        }
+      };
+
+      const handleSave = (filePath, newContent) => {
+        onUpdateContent(filePath, newContent);
+      };
+
+      if (editing) {
+        const c = contents[editing] !== undefined ? contents[editing] : '# ' + editing.split('/').pop() + '\n\n(No content loaded for this file in prototype)';
+        return (
+          <FileEditor
+            path={editing}
+            content={c}
+            onSave={handleSave}
+            onClose={() => setEditing(null)}
+          />
+        );
+      }
+
+      return (
+        <FileBrowser
+          path={path}
+          entries={entries}
+          onNavigate={setPath}
+          onFileSelect={handleFileSelect}
+        />
+      );
+    }
+
+    function Sidebar({ tab, onTabChange, frames, onClearFrames, files, contents, onUpdateContent }) {
+      return (
+        <div className="nano-sidebar">
+          <div className="nano-sidebar-header">
+            <div className="tab-strip">
+              <div
+                className={'tab-folder' + (tab === 'logs' ? ' active' : '')}
+                onClick={() => onTabChange('logs')}
+              >Logs</div>
+              <div
+                className={'tab-folder' + (tab === 'workspace' ? ' active' : '')}
+                onClick={() => onTabChange('workspace')}
+              >Workspace</div>
+            </div>
+          </div>
+          <div className="nano-sidebar-body">
+            {tab === 'logs' ? (
+              <DebugLog frames={frames} onClear={onClearFrames} />
+            ) : (
+              <WorkspacePanel files={files} contents={contents} onUpdateContent={onUpdateContent} />
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ============================================================
+    // APP
+    // ============================================================
+
+    function App() {
+      const [messages, setMessages] = useState(SEED_MESSAGES);
+      const [frames, setFrames] = useState(SEED_FRAMES);
+      const [waiting, setWaiting] = useState(false);
+      const [agentStatus, setAgentStatus] = useState('idle');
+      const [agentDetail, setAgentDetail] = useState('');
+      const [sidebarOpen, setSidebarOpen] = useState(true);
+      const [sidebarTab, setSidebarTab] = useState('logs');
+      const [contents, setContents] = useState(FAKE_CONTENTS);
+      const pendingTimer = useRef(null);
+
+      const addFrame = (dir, type, body) => {
+        setFrames(prev => [...prev, mkFrame(dir, type, body, new Date())]);
+      };
+
+      const handleStop = useCallback(() => {
+        if (pendingTimer.current) { clearTimeout(pendingTimer.current); pendingTimer.current = null; }
+        setWaiting(false);
+        setAgentStatus('idle');
+        addFrame('in', 'event', JSON.stringify({ type: 'event', category: 'agent', event: 'stopped', data: {} }));
+      }, []);
+
+      const handleSend = useCallback((text) => {
+        const now = new Date();
+        setMessages(prev => [...prev, {
+          id: genId(), content: text, isFromUser: true, timestamp: now,
+        }]);
+        addFrame('out', 'message', JSON.stringify({ type: 'message', content: text }));
+
+        setWaiting(true);
+        setAgentStatus('thinking');
+        addFrame('in', 'event', JSON.stringify({ type: 'event', category: 'agent', event: 'thinking_started', data: {} }));
+
+        pendingTimer.current = setTimeout(() => {
+          pendingTimer.current = null;
+          setAgentStatus('idle');
+          setWaiting(false);
+          const reply = 'You said: "' + text + '"\n\nThis is a UI prototype — responses are echoed. Connect to `' + WS_URL + '` for real AI responses.';
+          setMessages(prev => [...prev, {
+            id: genId(), content: reply, isFromUser: false, timestamp: new Date(),
+          }]);
+          addFrame('in', 'response', JSON.stringify({ type: 'response', content: reply.slice(0, 80) + '…' }));
+        }, 600 + Math.random() * 400);
+      }, []);
+
+      const handleClearFrames = useCallback(() => setFrames([]), []);
+
+      const handleUpdateContent = useCallback((path, newContent) => {
+        setContents(prev => ({ ...prev, [path]: newContent }));
+      }, []);
+
+      return (
+        <div className="nano-app">
+          <TopBar connected={true} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen(p => !p)} />
+          <AgentStatus status={agentStatus} detail={agentDetail} />
+          <div className="nano-main">
+            <ChatPanel messages={messages} onSend={handleSend} waiting={waiting} onStop={handleStop} />
+            {sidebarOpen && (
+              <Sidebar
+                tab={sidebarTab}
+                onTabChange={setSidebarTab}
+                frames={frames}
+                onClearFrames={handleClearFrames}
+                files={FAKE_FILES}
+                contents={contents}
+                onUpdateContent={handleUpdateContent}
+              />
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>

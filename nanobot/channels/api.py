@@ -60,6 +60,9 @@ class ApiChannel(BaseChannel):
         self._connections: dict[str, object] = {}
         self._latest_conn_id: str | None = None
 
+        # Workspace root for file browser
+        self._workspace = Path(workspace).expanduser().resolve()
+
         # Push notifications
         self._push_dir = Path(workspace).expanduser() / "push"
         self._vapid_keys: dict[str, str] | None = None
@@ -388,6 +391,18 @@ class ApiChannel(BaseChannel):
         _link_preview_cache[url] = (result, now)
         return result
 
+    def _resolve_workspace_path(self, rel_path: str) -> Path:
+        """Resolve a relative path against workspace root, rejecting escapes."""
+        if not rel_path:
+            return self._workspace
+        cleaned = Path(rel_path)
+        if cleaned.is_absolute():
+            raise ValueError("Absolute paths not allowed")
+        resolved = (self._workspace / cleaned).resolve()
+        if not str(resolved).startswith(str(self._workspace)):
+            raise ValueError("Path escapes workspace directory")
+        return resolved
+
     async def _process_message(self, ws, conn_id: str, raw: str) -> None:
         """Parse and route a single inbound message."""
         try:
@@ -425,6 +440,53 @@ class ApiChannel(BaseChannel):
             endpoint = data.get("endpoint", "")
             if endpoint:
                 self._remove_subscription(endpoint)
+            return
+
+        if msg_type == "workspace_list":
+            try:
+                target = self._resolve_workspace_path(data.get("path", ""))
+                if not target.is_dir():
+                    raise ValueError(f"Not a directory: {data.get('path', '')}")
+                entries = []
+                for child in sorted(target.iterdir(), key=lambda p: (not p.is_dir(), p.name)):
+                    entries.append({
+                        "name": child.name,
+                        "is_dir": child.is_dir(),
+                        "size": child.stat().st_size if child.is_file() else 0,
+                    })
+                rel = str(target.relative_to(self._workspace))
+                payload = {"type": "workspace_list_result", "path": rel, "entries": entries}
+            except Exception as e:
+                payload = {"type": "workspace_list_result", "path": data.get("path", ""),
+                           "entries": [], "error": str(e)}
+            await ws.send(json.dumps(payload))
+            return
+
+        if msg_type == "workspace_read":
+            try:
+                target = self._resolve_workspace_path(data.get("path", ""))
+                if not target.is_file():
+                    raise ValueError(f"Not a file: {data.get('path', '')}")
+                content = target.read_text(encoding="utf-8")
+                payload = {"type": "workspace_read_result",
+                           "path": data.get("path", ""), "content": content}
+            except Exception as e:
+                payload = {"type": "workspace_read_result",
+                           "path": data.get("path", ""), "content": "", "error": str(e)}
+            await ws.send(json.dumps(payload))
+            return
+
+        if msg_type == "workspace_write":
+            try:
+                target = self._resolve_workspace_path(data.get("path", ""))
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(data.get("content", ""), encoding="utf-8")
+                payload = {"type": "workspace_write_result",
+                           "path": data.get("path", ""), "success": True}
+            except Exception as e:
+                payload = {"type": "workspace_write_result",
+                           "path": data.get("path", ""), "success": False, "error": str(e)}
+            await ws.send(json.dumps(payload))
             return
 
         if msg_type != "message":

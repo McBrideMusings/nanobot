@@ -22,3 +22,5 @@ poetry.lock
 tests/
 botpy.log
 .DS_Store
+*.fuse*
+tmp/

@@ -1,35 +1,94 @@
 # Phase 2 — Core Chat Polish
 
-**Scope:** Mostly client-side
+**Status:** Done (web client)
+**Scope:** Backend streaming + event bus + both clients
 
 ## Streaming Responses
 
-Uses the already-reserved `stream_start` / `stream_chunk` / `stream_end` protocol types. Text appears word-by-word as the bot generates it.
+The agent loop streams LLM output token-by-token via the event bus. The API channel translates stream events into dedicated wire protocol messages.
 
-- Client-side toggle to enable/disable streaming display.
-- When streaming is off, the user sees the agent status bar activity (from Phase 1), then the final message.
-- Notifications only fire on the final complete response, never on individual chunks.
+**Backend:**
+- `LLMProvider.stream_chat()` — async generator yielding `StreamChunk` (delta content, accumulated tool calls, finish reason). Default implementation falls back to non-streaming `chat()`.
+- `LiteLLMProvider.stream_chat()` — calls `acompletion(stream=True)`, accumulates tool call deltas across chunks.
+- `AgentLoop._call_llm_streaming()` — wraps `stream_chat()`, emits `stream_start`, `stream_chunk`, `stream_end` events via the event bus.
+
+**Wire protocol:**
+```json
+{"type": "stream_start", "id": "a1b2c3d4e5f6"}
+{"type": "stream_chunk", "id": "a1b2c3d4e5f6", "delta": "Hello"}
+{"type": "stream_chunk", "id": "a1b2c3d4e5f6", "delta": " world"}
+{"type": "stream_end", "id": "a1b2c3d4e5f6"}
+```
+
+Stream events use dedicated message types (not wrapped in `{"type": "event"}`). Each LLM call gets a unique `id` so the client can correlate chunks.
+
+**Client:**
+- Client-side toggle to enable/disable streaming display (persisted to localStorage, default: on).
+- When streaming is off, chunks are accumulated silently and displayed as a single complete message.
+- A `streamDelivered` flag suppresses the duplicate `response` message that arrives after stream completion.
 
 ## Markdown Rendering
 
-Render bot responses as rich text — code blocks with syntax highlighting, lists, bold/italic, inline code, links. The current `Text()` view in `MessageBubbleView` gets replaced with a markdown renderer.
+Bot responses render as rich markdown — headings, code blocks with syntax highlighting, tables, blockquotes, lists, inline code, links.
 
-Shared component: the markdown renderer built here is reused in the workspace inspector (Phase 4).
+**Dependencies:** `react-markdown`, `remark-gfm`, `rehype-highlight`, `highlight.js` (github-dark theme).
 
-## Push Notifications (APNs)
-
-Must work when the app is closed. Requires:
-
-- APNs registration and device token management on the client.
-- Backend endpoint or mechanism to send push notifications via APNs.
-- Baseline trigger: all direct bot responses.
-- Other event types (heartbeats, sub-agent completions, cron) are configurable (see Phase 4 notification tuning).
+**Components:**
+- `MarkdownRenderer` — memoized wrapper around ReactMarkdown with stable plugin arrays. Links open in new tabs with `rel="noopener noreferrer"`.
+- `MessageBubble` — uses `MarkdownRenderer` for bot messages, plain text for user messages. Shows a blinking cursor during active streaming.
 
 ## Link Previews
 
-Detect URLs in message content and render preview cards (title, image, favicon) below the message bubble.
+URLs in bot messages get Open Graph preview cards (title, description, thumbnail, favicon).
 
-- **Swift:** `LPMetadataProvider` from LinkPresentation framework — entirely client-side, no backend work.
-- **Web:** Open Graph meta tag fetching (may need a backend proxy for CORS).
+**Backend (`api.py`):**
+- `_fetch_link_preview(url)` — fetches the URL with httpx (5s timeout), parses HTML with BeautifulSoup for `og:title`, `og:description`, `og:image`, `<title>`, favicon.
+- SSRF protection via `_is_safe_url()` — rejects private, loopback, link-local, and reserved IP ranges.
+- In-memory cache with 10-minute TTL and 200-entry max (LRU eviction).
 
-Quick win with high polish impact.
+**Wire protocol:**
+```json
+{"type": "link_preview", "url": "https://example.com"}
+{"type": "link_preview_result", "url": "https://example.com", "title": "Example", "description": "...", "image": "...", "favicon": "..."}
+```
+
+**Client:**
+- `MessageBubble` detects URLs in completed bot messages via regex, requests previews via WebSocket.
+- `LinkPreview` — compact card component: favicon + title + description + thumbnail.
+
+**Dependency:** `beautifulsoup4` (Python).
+
+## Web Push Notifications (Browser)
+
+Push notifications via the Web Push API when the browser tab is closed or backgrounded. Fires on `thinking_finished` events (final response ready).
+
+**Backend (`api.py`):**
+- VAPID key pair generated on first use, stored in `~/.nanobot/workspace/push/vapid.json` (mode 0600).
+- Subscriptions stored in `~/.nanobot/workspace/push/subscriptions.json`, deduped by endpoint.
+- Push sending via `pywebpush`, offloaded to `asyncio.to_thread` to avoid blocking the event loop.
+- Dead subscriptions (410/404) automatically cleaned up.
+
+**Wire protocol:**
+```json
+{"type": "push_vapid"}
+{"type": "push_vapid_key", "key": "<base64-urlsafe-public-key>"}
+{"type": "push_subscribe", "subscription": {...}}
+{"type": "push_unsubscribe", "endpoint": "..."}
+```
+
+**Client:**
+- `sw.js` service worker handles `push` and `notificationclick` events.
+- `usePushNotifications` hook manages service worker registration and subscription lifecycle.
+- Toggle in settings bar (hidden when Push API not supported, disabled when permission denied).
+
+**Dependency:** `pywebpush`, `py-vapid`, `cryptography` (Python).
+
+**Requirement:** Push API requires a secure context (HTTPS or localhost). On Tailscale, use `tailscale cert` for the MagicDNS hostname.
+
+## Swift Client (Planned)
+
+The Swift client will implement these features with native frameworks:
+- **Streaming:** Same wire protocol, rendered with SwiftUI text updates.
+- **Markdown:** Native `AttributedString` with markdown parsing.
+- **Link Previews:** `LPMetadataProvider` from LinkPresentation (entirely client-side).
+- **Push:** APNs instead of Web Push — requires a backend APNs integration.
