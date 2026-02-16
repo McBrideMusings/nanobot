@@ -97,7 +97,7 @@ export interface IncomingWorkspaceWriteResult {
   error?: string;
 }
 
-export type SidebarTab = 'debug' | 'workspace';
+export type NavTab = 'chat' | 'canvas' | 'files' | 'logs';
 
 export type IncomingMessage =
   | IncomingResponse | IncomingHistory | IncomingError | IncomingEvent

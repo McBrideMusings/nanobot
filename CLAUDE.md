@@ -16,10 +16,12 @@ Tickets live in `docs/tickets/*.md` with YAML frontmatter (`title`, `status`, `p
 
 **When working on a ticket, always update it:**
 
-1. **Starting work** — Change `status: backlog` → `status: in-progress` at the top of the ticket file
+1. **Starting work** — Change `status: backlog` → `status: doing` at the top of the ticket file
 2. **During implementation** — Add notes, decisions, or scope changes to the ticket body as you go (e.g. under a `## Notes` section)
-3. **Completing work** — Change `status: in-progress` → `status: done`
-4. **If blocked or paused** — Leave status as `in-progress` and add a note explaining what's blocking
+3. **Completing work** — Change `status: doing` → `status: done`
+4. **If blocked or paused** — Leave status as `doing` and add a note explaining what's blocking
+
+Valid board column keys: `backlog`, `doing`, `review`, `done` (must match `docs/board.md`).
 
 This keeps the board view accurate and provides a record of decisions made during implementation.
 
