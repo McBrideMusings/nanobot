@@ -10,6 +10,6 @@
     "vitepress": "^1.6.4"
   },
   "dependencies": {
-    "vitepress-theme-pm": "^0.1.0"
+    "vitepress-theme-pm": "^0.2.0"
   }
 }
