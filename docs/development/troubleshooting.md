@@ -49,7 +49,7 @@ Check:
 
 The `exec` tool has a 60-second default timeout. For longer commands:
 1. Increase timeout in config: `"tools": {"exec": {"timeout": 120}}`
-2. Or use the planned [Background Process Tool](/features/background-process-tool)
+2. Or use the planned [Background Process Tool](/tickets/13)
 
 ## Session/Memory Issues
 

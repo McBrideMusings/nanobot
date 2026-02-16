@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitepress'
 import type { Plugin } from 'vite'
+import { markdownWriterPlugin } from 'vitepress-theme-pm/plugin'
 
 const TAILSCALE_IP = process.env.TAILSCALE_IP || '100.114.249.118'
 
@@ -29,7 +30,7 @@ export default defineConfig({
       { text: 'Guide', link: '/guide/getting-started' },
       { text: 'Architecture', link: '/architecture/overview' },
       { text: 'Development', link: '/development/setup' },
-      { text: 'Features', link: '/features/chat-app-roadmap' },
+      { text: 'Board', link: '/board' },
     ],
 
     sidebar: {
@@ -66,33 +67,37 @@ export default defineConfig({
           ],
         },
       ],
-      '/features/': [
+      '/tickets/': [
         {
           text: 'Chat App',
           items: [
-            { text: 'Roadmap', link: '/features/chat-app-roadmap' },
-            { text: 'Phase 1 — Agent Observability', link: '/features/chat-app/phase-1-agent-observability' },
-            { text: 'Phase 2 — Core Chat Polish', link: '/features/chat-app/phase-2-core-chat-polish' },
-            { text: 'Phase 3 — Rich Interactions', link: '/features/chat-app/phase-3-rich-interactions' },
-            { text: 'Phase 4 — Workspace & Intelligence', link: '/features/chat-app/phase-4-workspace-intelligence' },
-            { text: 'Phase 5 — Deferred / Research', link: '/features/chat-app/phase-5-deferred-research' },
+            { text: 'NB-1: Agent Observability', link: '/tickets/1' },
+            { text: 'NB-2: Core Chat Polish', link: '/tickets/2' },
+            { text: 'NB-3: Replies & Reactions', link: '/tickets/3' },
+            { text: 'NB-4: Inline Media', link: '/tickets/4' },
+            { text: 'NB-5: Chat Search', link: '/tickets/5' },
+            { text: 'NB-6: Workspace Inspector', link: '/tickets/6' },
+            { text: 'NB-7: Bot Profile', link: '/tickets/7' },
+            { text: 'NB-8: Notification Tuning', link: '/tickets/8' },
+            { text: 'NB-9: Voice Messages', link: '/tickets/9' },
+            { text: 'NB-10: Deferred Research', link: '/tickets/10' },
           ],
         },
         {
-          text: 'Planned Features',
+          text: 'Tools',
           items: [
-            { text: 'MCP Support', link: '/features/mcp-support' },
-            { text: 'Memory Search', link: '/features/memory-search' },
-            { text: 'Background Process Tool', link: '/features/background-process-tool' },
-            { text: 'Heartbeat Enhancements', link: '/features/heartbeat-enhancements' },
+            { text: 'NB-11: MCP Support', link: '/tickets/11' },
+            { text: 'NB-12: Memory Search', link: '/tickets/12' },
+            { text: 'NB-13: Background Process', link: '/tickets/13' },
+            { text: 'NB-14: Heartbeat Enhancements', link: '/tickets/14' },
           ],
         },
         {
           text: 'Skills',
           items: [
-            { text: 'ErsatzTV', link: '/features/ersatztv-skill' },
-            { text: 'Tautulli + Plex', link: '/features/tautulli-plex-skill' },
-            { text: 'Kometa', link: '/features/kometa-skill' },
+            { text: 'NB-15: ErsatzTV', link: '/tickets/15' },
+            { text: 'NB-16: Tautulli + Plex', link: '/tickets/16' },
+            { text: 'NB-17: Kometa', link: '/tickets/17' },
           ],
         },
       ],
@@ -110,7 +115,7 @@ export default defineConfig({
   },
 
   vite: {
-    plugins: [tailscaleNetwork()],
+    plugins: [tailscaleNetwork(), markdownWriterPlugin()],
     server: {
       host: '0.0.0.0',
       port: 3301,

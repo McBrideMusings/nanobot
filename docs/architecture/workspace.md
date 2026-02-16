@@ -50,7 +50,7 @@ These files are loaded into the system prompt every time the agent responds:
 **Daily notes** (`memory/YYYY-MM-DD.md`):
 - Timestamped entries from each day
 - Recent days loaded into context
-- Older notes fall out of context window (see [Memory Search](/features/memory-search) for planned search)
+- Older notes fall out of context window (see [Memory Search](/tickets/12) for planned search)
 
 ## Heartbeat
 
@@ -63,7 +63,7 @@ Example:
 - Only DM me if something is genuinely surprising or useful
 ```
 
-See [Heartbeat Enhancements](/features/heartbeat-enhancements) for planned improvements.
+See [Heartbeat Enhancements](/tickets/14) for planned improvements.
 
 ## Sessions
 

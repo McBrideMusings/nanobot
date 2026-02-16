@@ -78,7 +78,7 @@ The easiest way is to ask the agent itself (it has a `skill-creator` skill), or 
 
 ## Planned Skills
 
-See the [Features](/features/ersatztv-skill) section for planned skills:
-- [ErsatzTV](/features/ersatztv-skill) — TV channel and schedule management
-- [Tautulli + Plex](/features/tautulli-plex-skill) — Plex analytics and home screen control
-- [Kometa](/features/kometa-skill) — Plex collection authoring
+See the [Board](/board) for planned skills:
+- [ErsatzTV](/tickets/15) — TV channel and schedule management
+- [Tautulli + Plex](/tickets/16) — Plex analytics and home screen control
+- [Kometa](/tickets/17) — Plex collection authoring
