@@ -287,6 +287,12 @@ def _make_provider(config):
 # ============================================================================
 
 
+def _strip_think_tags(text: str) -> str:
+    """Strip <think>...</think> blocks from model output."""
+    import re
+    return re.sub(r"<think>[\s\S]*?</think>\s*", "", text).strip()
+
+
 def _make_heartbeat_callback(config, agent, task_store, session_manager, event_bus):
     """Build the task-wrapped heartbeat callback. Shared by gateway() and heartbeat trigger."""
     async def on_heartbeat(prompt: str) -> str:
@@ -319,7 +325,7 @@ def _make_heartbeat_callback(config, agent, task_store, session_manager, event_b
                 chat_id=chat_id,
                 metadata={"task_id": task.id},
             )
-            summary = (response or "")[:120]
+            summary = _strip_think_tags(response or "")[:120]
             task_store.update(task.id, status="completed", summary=summary)
             await event_bus.publish(AgentEvent("task", "completed", {
                 "task_id": task.id, "summary": summary,
@@ -437,7 +443,7 @@ def gateway(
                 chat_id=chat_id,
                 metadata={"task_id": task.id},
             )
-            summary = (response or "")[:120]
+            summary = _strip_think_tags(response or "")[:120]
             task_store.update(task.id, status="completed", summary=summary)
             await event_bus.publish(AgentEvent("task", "completed", {
                 "task_id": task.id, "summary": summary,

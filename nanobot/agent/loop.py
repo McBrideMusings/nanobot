@@ -416,6 +416,10 @@ class AgentLoop:
             final_content = "I've completed processing but have no response to give."
             await self._emit("thinking_finished", {"iterations": iteration})
 
+        # Strip <think>...</think> blocks from reasoning models (e.g. Qwen)
+        import re
+        final_content = re.sub(r"<think>[\s\S]*?</think>\s*", "", final_content).strip()
+
         # Log response preview
         preview = final_content[:120] + "..." if len(final_content) > 120 else final_content
         logger.info(f"Response to {msg.channel}:{msg.sender_id}: {preview}")
