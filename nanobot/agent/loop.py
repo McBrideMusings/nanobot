@@ -584,6 +584,7 @@ class AgentLoop:
             chat_id=chat_id,
             content=content,
             metadata=metadata or {},
+            _session_key=session_key if session_key != f"{channel}:{chat_id}" else None,
         )
 
         response = await self._process_message(msg)
