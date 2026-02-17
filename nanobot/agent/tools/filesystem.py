@@ -7,8 +7,15 @@ from nanobot.agent.tools.base import Tool
 
 
 def _resolve_path(path: str, allowed_dir: Path | None = None) -> Path:
-    """Resolve path and optionally enforce directory restriction."""
-    resolved = Path(path).expanduser().resolve()
+    """Resolve path and optionally enforce directory restriction.
+
+    Relative paths are resolved against allowed_dir (the workspace) when set,
+    so that tools behave consistently regardless of process cwd.
+    """
+    p = Path(path).expanduser()
+    if not p.is_absolute() and allowed_dir:
+        p = allowed_dir / p
+    resolved = p.resolve()
     if allowed_dir and not str(resolved).startswith(str(allowed_dir.resolve())):
         raise PermissionError(f"Path {path} is outside allowed directory {allowed_dir}")
     return resolved
