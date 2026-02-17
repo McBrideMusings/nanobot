@@ -1,10 +1,11 @@
 import type { NavTab } from '../types';
-import { ChatIcon, CanvasIcon, FilesIcon, TerminalIcon } from './Icons';
+import { ChatIcon, CanvasIcon, FilesIcon, TasksIcon, TerminalIcon } from './Icons';
 
 const NAV_TABS: { id: NavTab; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
   { id: 'chat', label: 'Chat', icon: ChatIcon },
   { id: 'canvas', label: 'Canvas', icon: CanvasIcon },
   { id: 'files', label: 'Files', icon: FilesIcon },
+  { id: 'tasks', label: 'Tasks', icon: TasksIcon },
   { id: 'logs', label: 'Logs', icon: TerminalIcon },
 ];
 

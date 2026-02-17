@@ -23,6 +23,7 @@ from nanobot.config.schema import ApiConfig
 if TYPE_CHECKING:
     from nanobot.bus.event_bus import AgentEvent, EventBus
     from nanobot.session.manager import SessionManager
+    from nanobot.task.store import TaskStore
 
 FIXED_CHAT_ID = "default"
 
@@ -51,11 +52,13 @@ class ApiChannel(BaseChannel):
     def __init__(self, config: ApiConfig, bus: MessageBus,
                  session_manager: "SessionManager | None" = None,
                  event_bus: "EventBus | None" = None,
-                 workspace: str = "~/.nanobot/workspace"):
+                 workspace: str = "~/.nanobot/workspace",
+                 task_store: "TaskStore | None" = None):
         super().__init__(config, bus)
         self.config: ApiConfig = config
         self.session_manager = session_manager
         self.event_bus = event_bus
+        self.task_store = task_store
         self._server = None
         self._connections: dict[str, object] = {}
         self._latest_conn_id: str | None = None
@@ -201,7 +204,6 @@ class ApiChannel(BaseChannel):
             return
 
         # Stream events get their own wire protocol messages
-        # event.event is already "stream_start" / "stream_chunk" / "stream_end"
         if event.category == "stream":
             stream_type = event.event
             msg: dict[str, Any] = {"type": stream_type}
@@ -209,14 +211,30 @@ class ApiChannel(BaseChannel):
                 msg["id"] = event.data["id"]
             if "delta" in event.data:
                 msg["delta"] = event.data["delta"]
+            # Propagate task_id so frontend can filter
+            if "task_id" in event.data:
+                msg["task_id"] = event.data["task_id"]
             payload = json.dumps(msg)
-        else:
+        elif event.category == "task":
             payload = json.dumps({
+                "type": "task_event",
+                "event": event.event,
+                "data": event.data,
+            })
+        elif event.category == "system_message":
+            payload = json.dumps({
+                "type": "system_message",
+                "task_id": event.data.get("task_id", ""),
+                "content": event.data.get("content", ""),
+            })
+        else:
+            wire: dict[str, Any] = {
                 "type": "event",
                 "category": event.category,
                 "event": event.event,
                 "data": event.data,
-            })
+            }
+            payload = json.dumps(wire)
         dead: list[str] = []
         for conn_id, ws in list(self._connections.items()):
             try:
@@ -440,6 +458,34 @@ class ApiChannel(BaseChannel):
             endpoint = data.get("endpoint", "")
             if endpoint:
                 self._remove_subscription(endpoint)
+            return
+
+        if msg_type == "task_list":
+            tasks = []
+            if self.task_store:
+                for t in self.task_store.list_recent(limit=50):
+                    tasks.append({
+                        "id": t.id, "type": t.type, "status": t.status,
+                        "label": t.label, "summary": t.summary,
+                        "createdAtMs": t.created_at_ms,
+                        "completedAtMs": t.completed_at_ms,
+                        "error": t.error,
+                    })
+            await ws.send(json.dumps({"type": "task_list_result", "tasks": tasks}))
+            return
+
+        if msg_type == "task_session":
+            task_id = data.get("task_id", "")
+            messages: list[dict[str, str]] = []
+            if self.task_store and self.session_manager:
+                task = self.task_store.get(task_id)
+                if task:
+                    session = self.session_manager.get_or_create(task.session_key)
+                    messages = [{"role": m["role"], "content": m["content"]}
+                                for m in session.messages]
+            await ws.send(json.dumps({
+                "type": "task_session_result", "task_id": task_id, "messages": messages,
+            }))
             return
 
         if msg_type == "workspace_list":

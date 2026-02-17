@@ -86,17 +86,24 @@ class AgentLoop:
         )
 
         self._running = False
+        self._current_task_id: str | None = None
         self._register_default_tools()
 
     async def _emit(self, event: str, data: dict[str, Any] | None = None) -> None:
         """Emit an agent event if the event bus is available."""
         if self.event_bus:
-            await self.event_bus.publish(AgentEvent("agent", event, data or {}))
+            payload = dict(data) if data else {}
+            if self._current_task_id:
+                payload["task_id"] = self._current_task_id
+            await self.event_bus.publish(AgentEvent("agent", event, payload))
 
     async def _emit_stream(self, event: str, data: dict[str, Any]) -> None:
         """Emit a stream event via the event bus."""
         if self.event_bus:
-            await self.event_bus.publish(AgentEvent("stream", event, data))
+            payload = dict(data)
+            if self._current_task_id:
+                payload["task_id"] = self._current_task_id
+            await self.event_bus.publish(AgentEvent("stream", event, payload))
 
     async def _call_llm_streaming(
         self,
@@ -304,6 +311,9 @@ class AgentLoop:
         if msg.channel == "system":
             return await self._process_system_message(msg)
 
+        # Track task_id for event tagging (heartbeat / cron tasks)
+        self._current_task_id = msg.metadata.get("task_id") if msg.metadata else None
+
         preview = msg.content[:80] + "..." if len(msg.content) > 80 else msg.content
         logger.info(f"Processing message from {msg.channel}:{msg.sender_id}: {preview}")
 
@@ -414,6 +424,8 @@ class AgentLoop:
         session.add_message("user", msg.content)
         session.add_message("assistant", final_content)
         self.sessions.save(session)
+
+        self._current_task_id = None
 
         return OutboundMessage(
             channel=msg.channel,
@@ -551,16 +563,18 @@ class AgentLoop:
         session_key: str = "cli:direct",
         channel: str = "cli",
         chat_id: str = "direct",
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """
         Process a message directly (for CLI or cron usage).
-        
+
         Args:
             content: The message content.
             session_key: Session identifier.
             channel: Source channel (for context).
             chat_id: Source chat ID (for context).
-        
+            metadata: Optional metadata (e.g. task_id for task tracking).
+
         Returns:
             The agent's response.
         """
@@ -568,7 +582,8 @@ class AgentLoop:
             channel=channel,
             sender_id="user",
             chat_id=chat_id,
-            content=content
+            content=content,
+            metadata=metadata or {},
         )
 
         response = await self._process_message(msg)

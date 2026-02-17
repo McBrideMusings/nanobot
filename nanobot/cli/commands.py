@@ -283,6 +283,70 @@ def _make_provider(config):
 
 
 # ============================================================================
+# Heartbeat callback helper (shared by gateway + CLI trigger)
+# ============================================================================
+
+
+def _make_heartbeat_callback(config, agent, task_store, session_manager, event_bus):
+    """Build the task-wrapped heartbeat callback. Shared by gateway() and heartbeat trigger."""
+    async def on_heartbeat(prompt: str) -> str:
+        from nanobot.bus.event_bus import AgentEvent
+        hb = config.heartbeat
+        channel = hb.channel or "cli"
+        chat_id = hb.chat_id or "direct"
+        # Each heartbeat run gets its own session for isolated context
+        task = task_store.add("heartbeat", "Heartbeat check", "")
+        session_key = f"heartbeat:{task.id}"
+        task.session_key = session_key
+        task_store._save()
+        await event_bus.publish(AgentEvent("task", "started", {
+            "task_id": task.id, "type": "heartbeat", "label": task.label,
+        }))
+
+        # Inject system message into chat session
+        chat_session = session_manager.get_or_create("api:default")
+        chat_session.add_message("assistant", "[System] Heartbeat task started")
+        session_manager.save(chat_session)
+        await event_bus.publish(AgentEvent("system_message", "injected", {
+            "task_id": task.id, "content": "[System] Heartbeat task started",
+        }))
+
+        try:
+            response = await agent.process_direct(
+                prompt,
+                session_key=session_key,
+                channel=channel,
+                chat_id=chat_id,
+                metadata={"task_id": task.id},
+            )
+            summary = (response or "")[:120]
+            task_store.update(task.id, status="completed", summary=summary)
+            await event_bus.publish(AgentEvent("task", "completed", {
+                "task_id": task.id, "summary": summary,
+            }))
+            chat_session = session_manager.get_or_create("api:default")
+            chat_session.add_message("assistant", f"[System] Heartbeat completed: {summary}")
+            session_manager.save(chat_session)
+            await event_bus.publish(AgentEvent("system_message", "injected", {
+                "task_id": task.id, "content": f"[System] Heartbeat completed: {summary}",
+            }))
+            return response
+        except Exception as e:
+            task_store.update(task.id, status="failed", error=str(e))
+            await event_bus.publish(AgentEvent("task", "failed", {
+                "task_id": task.id, "error": str(e),
+            }))
+            chat_session = session_manager.get_or_create("api:default")
+            chat_session.add_message("assistant", f"[System] Heartbeat failed: {e}")
+            session_manager.save(chat_session)
+            await event_bus.publish(AgentEvent("system_message", "injected", {
+                "task_id": task.id, "content": f"[System] Heartbeat failed: {e}",
+            }))
+            return ""
+    return on_heartbeat
+
+
+# ============================================================================
 # Gateway / Server
 # ============================================================================
 
@@ -302,7 +366,8 @@ def gateway(
     from nanobot.cron.service import CronService
     from nanobot.cron.types import CronJob
     from nanobot.heartbeat.service import HeartbeatService
-    
+    from nanobot.task.store import TaskStore
+
     if verbose:
         import logging
         logging.basicConfig(level=logging.DEBUG)
@@ -315,6 +380,9 @@ def gateway(
     provider = _make_provider(config)
     session_manager = SessionManager(config.workspace_path)
     
+    # Create task store for tracking autonomous work
+    task_store = TaskStore(get_data_dir() / "tasks.json")
+
     # Create cron service first (callback set after agent creation)
     cron_store_path = get_data_dir() / "cron" / "jobs.json"
     cron = CronService(cron_store_path, event_bus=event_bus)
@@ -339,17 +407,65 @@ def gateway(
     
     # Set cron callback (needs agent)
     async def on_cron_job(job: CronJob) -> str | None:
-        """Execute a cron job through the agent."""
-        response = await agent.process_direct(
-            job.payload.message,
-            session_key=f"cron:{job.id}",
-            channel=job.payload.channel or "cli",
-            chat_id=job.payload.to or "direct",
-        )
+        """Execute a cron job through the agent, wrapped in a task."""
+        from nanobot.bus.event_bus import AgentEvent
+        channel = job.payload.channel or "cli"
+        chat_id = job.payload.to or "direct"
+
+        # Each cron run gets its own session for isolated context
+        task = task_store.add("cron", f"Cron: {job.name}", "")
+        session_key = f"cron:{task.id}"
+        task.session_key = session_key
+        task_store._save()
+        await event_bus.publish(AgentEvent("task", "started", {
+            "task_id": task.id, "type": "cron", "label": task.label,
+        }))
+
+        # Inject system message into chat session
+        chat_session = session_manager.get_or_create("api:default")
+        chat_session.add_message("assistant", f"[System] Cron task started: {job.name}")
+        session_manager.save(chat_session)
+        await event_bus.publish(AgentEvent("system_message", "injected", {
+            "task_id": task.id, "content": f"[System] Cron task started: {job.name}",
+        }))
+
+        try:
+            response = await agent.process_direct(
+                job.payload.message,
+                session_key=session_key,
+                channel=channel,
+                chat_id=chat_id,
+                metadata={"task_id": task.id},
+            )
+            summary = (response or "")[:120]
+            task_store.update(task.id, status="completed", summary=summary)
+            await event_bus.publish(AgentEvent("task", "completed", {
+                "task_id": task.id, "summary": summary,
+            }))
+            # Inject completion system message
+            chat_session = session_manager.get_or_create("api:default")
+            chat_session.add_message("assistant", f"[System] Cron completed: {summary}")
+            session_manager.save(chat_session)
+            await event_bus.publish(AgentEvent("system_message", "injected", {
+                "task_id": task.id, "content": f"[System] Cron completed: {summary}",
+            }))
+        except Exception as e:
+            task_store.update(task.id, status="failed", error=str(e))
+            await event_bus.publish(AgentEvent("task", "failed", {
+                "task_id": task.id, "error": str(e),
+            }))
+            chat_session = session_manager.get_or_create("api:default")
+            chat_session.add_message("assistant", f"[System] Cron failed: {e}")
+            session_manager.save(chat_session)
+            await event_bus.publish(AgentEvent("system_message", "injected", {
+                "task_id": task.id, "content": f"[System] Cron failed: {e}",
+            }))
+            response = None
+
         if job.payload.deliver and job.payload.to:
             from nanobot.bus.events import OutboundMessage
             await bus.publish_outbound(OutboundMessage(
-                channel=job.payload.channel or "cli",
+                channel=channel,
                 chat_id=job.payload.to,
                 content=response or ""
             ))
@@ -357,17 +473,7 @@ def gateway(
     cron.on_job = on_cron_job
     
     # Create heartbeat service
-    async def on_heartbeat(prompt: str) -> str:
-        """Execute heartbeat through the agent."""
-        hb = config.heartbeat
-        channel = hb.channel or "cli"
-        chat_id = hb.chat_id or "direct"
-        return await agent.process_direct(
-            prompt,
-            session_key=f"heartbeat:{channel}:{chat_id}",
-            channel=channel,
-            chat_id=chat_id,
-        )
+    on_heartbeat = _make_heartbeat_callback(config, agent, task_store, session_manager, event_bus)
 
     heartbeat = HeartbeatService(
         workspace=config.workspace_path,
@@ -378,7 +484,8 @@ def gateway(
     )
     
     # Create channel manager
-    channels = ChannelManager(config, bus, session_manager=session_manager, event_bus=event_bus)
+    channels = ChannelManager(config, bus, session_manager=session_manager, event_bus=event_bus,
+                              task_store=task_store)
     
     if channels.enabled_channels:
         console.print(f"[green]✓[/green] Channels enabled: {', '.join(channels.enabled_channels)}")
@@ -818,6 +925,113 @@ def cron_run(
         console.print(f"[green]✓[/green] Job executed")
     else:
         console.print(f"[red]Failed to run job {job_id}[/red]")
+
+
+# ============================================================================
+# Heartbeat Commands
+# ============================================================================
+
+heartbeat_app = typer.Typer(help="Manage heartbeat")
+app.add_typer(heartbeat_app, name="heartbeat")
+
+
+@heartbeat_app.command("trigger")
+def heartbeat_trigger():
+    """Manually trigger a heartbeat now."""
+    from nanobot.config.loader import load_config, get_data_dir
+    from nanobot.bus.queue import MessageBus
+    from nanobot.bus.event_bus import EventBus
+    from nanobot.agent.loop import AgentLoop
+    from nanobot.session.manager import SessionManager
+    from nanobot.heartbeat.service import HeartbeatService
+    from nanobot.task.store import TaskStore
+
+    config = load_config()
+    bus = MessageBus()
+    event_bus = EventBus()
+    provider = _make_provider(config)
+    session_manager = SessionManager(config.workspace_path)
+    task_store = TaskStore(get_data_dir() / "tasks.json")
+
+    agent = AgentLoop(
+        bus=bus,
+        provider=provider,
+        workspace=config.workspace_path,
+        model=config.agents.defaults.model or None,
+        max_iterations=config.agents.defaults.max_tool_iterations,
+        brave_api_key=config.tools.web.search.api_key or None,
+        exec_config=config.tools.exec,
+        restrict_to_workspace=config.tools.restrict_to_workspace,
+        session_manager=session_manager,
+        event_bus=event_bus,
+        max_tokens=config.agents.defaults.max_tokens,
+        temperature=config.agents.defaults.temperature,
+        context_window=config.agents.defaults.context_window,
+    )
+
+    on_heartbeat = _make_heartbeat_callback(config, agent, task_store, session_manager, event_bus)
+    heartbeat_svc = HeartbeatService(
+        workspace=config.workspace_path,
+        on_heartbeat=on_heartbeat,
+        interval_s=config.heartbeat.interval_minutes * 60,
+        enabled=True,  # Always enabled for manual trigger
+        event_bus=event_bus,
+    )
+
+    async def run():
+        with console.status("[dim]Running heartbeat...[/dim]", spinner="dots"):
+            return await heartbeat_svc.trigger_now()
+
+    response = asyncio.run(run())
+    if response:
+        console.print(f"\n{__logo__} Heartbeat result:\n")
+        console.print(Markdown(response))
+    else:
+        console.print("[yellow]No heartbeat response (HEARTBEAT.md may be empty)[/yellow]")
+
+
+@heartbeat_app.command("status")
+def heartbeat_status():
+    """Show heartbeat configuration and last run."""
+    from nanobot.config.loader import load_config, get_data_dir
+    from nanobot.task.store import TaskStore
+
+    config = load_config()
+    hb = config.heartbeat
+
+    console.print(f"{__logo__} Heartbeat Status\n")
+    console.print(f"Enabled: {'[green]yes[/green]' if hb.enabled else '[red]no[/red]'}")
+    console.print(f"Interval: {hb.interval_minutes} minutes")
+    if hb.channel:
+        console.print(f"Channel: {hb.channel}")
+    if hb.chat_id:
+        console.print(f"Chat ID: {hb.chat_id}")
+
+    # Show HEARTBEAT.md status
+    hb_file = config.workspace_path / "HEARTBEAT.md"
+    if hb_file.exists():
+        content = hb_file.read_text().strip()
+        lines = len(content.splitlines()) if content else 0
+        console.print(f"HEARTBEAT.md: [green]exists[/green] ({lines} lines)")
+    else:
+        console.print("HEARTBEAT.md: [dim]not found[/dim]")
+
+    # Show last run from task store
+    task_store = TaskStore(get_data_dir() / "tasks.json")
+    recent = [t for t in task_store.list_recent(limit=10) if t.type == "heartbeat"]
+
+    if recent:
+        console.print(f"\n[bold]Recent runs:[/bold]")
+        import time
+        for task in recent[:5]:
+            ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(task.created_at_ms / 1000))
+            dot = {"completed": "[green]●[/green]", "failed": "[red]●[/red]", "running": "[yellow]●[/yellow]"}.get(task.status, "○")
+            summary = f" — {task.summary}" if task.summary else ""
+            if task.error:
+                summary = f" — [red]{task.error}[/red]"
+            console.print(f"  {dot} {ts}  {task.status}{summary}")
+    else:
+        console.print("\n[dim]No recent heartbeat runs.[/dim]")
 
 
 # ============================================================================

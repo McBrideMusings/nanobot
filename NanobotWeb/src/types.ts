@@ -97,13 +97,50 @@ export interface IncomingWorkspaceWriteResult {
   error?: string;
 }
 
-export type NavTab = 'chat' | 'canvas' | 'files' | 'logs';
+export type NavTab = 'chat' | 'canvas' | 'files' | 'tasks' | 'logs';
+
+// Task types
+
+export interface TaskRecord {
+  id: string;
+  type: 'heartbeat' | 'cron';
+  status: 'running' | 'completed' | 'failed';
+  label: string;
+  summary: string;
+  createdAtMs: number;
+  completedAtMs: number | null;
+  error: string | null;
+}
+
+export interface IncomingTaskListResult {
+  type: 'task_list_result';
+  tasks: TaskRecord[];
+}
+
+export interface IncomingTaskSessionResult {
+  type: 'task_session_result';
+  task_id: string;
+  messages: { role: string; content: string }[];
+}
+
+export interface IncomingTaskEvent {
+  type: 'task_event';
+  event: string;
+  data: Record<string, unknown>;
+}
+
+export interface IncomingSystemMessage {
+  type: 'system_message';
+  task_id: string;
+  content: string;
+}
 
 export type IncomingMessage =
   | IncomingResponse | IncomingHistory | IncomingError | IncomingEvent
   | IncomingStreamStart | IncomingStreamChunk | IncomingStreamEnd
   | IncomingLinkPreviewResult
-  | IncomingWorkspaceListResult | IncomingWorkspaceReadResult | IncomingWorkspaceWriteResult;
+  | IncomingWorkspaceListResult | IncomingWorkspaceReadResult | IncomingWorkspaceWriteResult
+  | IncomingTaskListResult | IncomingTaskSessionResult | IncomingTaskEvent | IncomingSystemMessage;
 
 // Agent observability
 
@@ -125,6 +162,8 @@ export interface ChatMessage {
   isFromUser: boolean;
   timestamp: Date;
   isStreaming?: boolean;
+  isSystem?: boolean;
+  taskId?: string;
 }
 
 export interface LinkPreviewData {

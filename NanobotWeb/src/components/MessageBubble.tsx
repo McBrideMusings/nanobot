@@ -33,6 +33,14 @@ export function MessageBubble({ message, isStreaming, linkPreviews, requestLinkP
     // requestedUrls ref handles dedup, so content is the correct dep
   }, [message.content, isStreaming, requestLinkPreview]);
 
+  if (message.isSystem) {
+    return (
+      <div className="message-bubble system">
+        <div className="bubble-content">{message.content}</div>
+      </div>
+    );
+  }
+
   return (
     <div className={`message-bubble ${message.isFromUser ? 'user' : 'bot'}`}>
       <div className="bubble-content">

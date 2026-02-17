@@ -7,6 +7,7 @@ import { TabBar } from './components/TabBar';
 import { ChatPanel } from './components/ChatPanel';
 import { DebugPanel } from './components/DebugPanel';
 import { WorkspacePanel } from './components/WorkspacePanel';
+import { TasksPanel } from './components/TasksPanel';
 import { CanvasIcon } from './components/Icons';
 import type { NavTab } from './types';
 
@@ -37,6 +38,7 @@ export default function App() {
     requestLinkPreview, linkPreviews,
     workspaceEntries, workspaceFileContent, workspaceError, workspaceSaveStatus,
     workspaceList, workspaceRead, workspaceWrite,
+    tasks, taskSession, taskList, taskGetSession,
   } = useWebSocket(serverUrl, streamingEnabled);
 
   const push = usePushNotifications({ serverUrl });
@@ -89,6 +91,14 @@ export default function App() {
               <h2>Canvas</h2>
               <p>Coming soon</p>
             </div>
+          )}
+          {activeTab === 'tasks' && (
+            <TasksPanel
+              tasks={tasks}
+              taskSession={taskSession}
+              onRequestList={taskList}
+              onRequestSession={taskGetSession}
+            />
           )}
           {activeTab === 'files' && (
             <WorkspacePanel

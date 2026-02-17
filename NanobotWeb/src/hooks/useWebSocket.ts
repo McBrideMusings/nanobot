@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AgentEventRecord, AgentStatus, ChatMessage, DebugFrame, IncomingMessage, LinkPreviewData,
-  WorkspaceEntry,
+  TaskRecord, WorkspaceEntry,
 } from '../types';
 
 const MAX_FRAMES = 500;
@@ -30,6 +30,10 @@ export function useWebSocket(serverUrl: string, streamingEnabled: boolean = true
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [workspaceSaveStatus, setWorkspaceSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
+  // Task state
+  const [tasks, setTasks] = useState<TaskRecord[]>([]);
+  const [taskSession, setTaskSession] = useState<{ taskId: string; messages: { role: string; content: string }[] } | null>(null);
+
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectDelay = useRef(1000);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -42,6 +46,8 @@ export function useWebSocket(serverUrl: string, streamingEnabled: boolean = true
   streamingEnabledRef.current = streamingEnabled;
   // Track whether a stream completed for this response cycle (to suppress duplicate 'response')
   const streamDelivered = useRef(false);
+  // Debounce timer for task list refresh
+  const taskRefreshTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const addFrame = useCallback((direction: 'in' | 'out', raw: string, type: string) => {
     setFrames(prev => {
@@ -81,6 +87,20 @@ export function useWebSocket(serverUrl: string, streamingEnabled: boolean = true
     }
   }, []);
 
+  // Task send functions
+  const taskList = useCallback(() => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'task_list' }));
+    }
+  }, []);
+
+  const taskGetSession = useCallback((taskId: string) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      setTaskSession(null);
+      wsRef.current.send(JSON.stringify({ type: 'task_session', task_id: taskId }));
+    }
+  }, []);
+
   const connect = useCallback(() => {
     // Clean up existing connection
     if (wsRef.current) {
@@ -116,12 +136,16 @@ export function useWebSocket(serverUrl: string, streamingEnabled: boolean = true
       switch (parsed.type) {
         case 'history': {
           if ('messages' in parsed && parsed.messages) {
-            setMessages(parsed.messages.map(m => ({
-              id: generateId(),
-              content: m.content,
-              isFromUser: m.role === 'user',
-              timestamp: new Date(),
-            })));
+            setMessages(parsed.messages.map(m => {
+              const isSystem = m.role === 'assistant' && m.content.startsWith('[System]');
+              return {
+                id: generateId(),
+                content: m.content,
+                isFromUser: m.role === 'user',
+                timestamp: new Date(),
+                isSystem,
+              };
+            }));
           }
           break;
         }
@@ -162,6 +186,8 @@ export function useWebSocket(serverUrl: string, streamingEnabled: boolean = true
 
         // --- Streaming messages ---
         case 'stream_start': {
+          // Skip task-tagged streams (heartbeat/cron) — they don't belong in chat
+          if ((parsed as unknown as Record<string, unknown>).task_id) break;
           streamingMsgId.current = parsed.id;
           streamBuffer.current = '';
           if (streamingEnabledRef.current) {
@@ -267,6 +293,10 @@ export function useWebSocket(serverUrl: string, streamingEnabled: boolean = true
 
         case 'event': {
           if ('category' in parsed && 'event' in parsed) {
+            // Skip event cards for task-tagged agent events (heartbeat/cron)
+            const taskId = parsed.data?.task_id as string | undefined;
+            if (taskId && parsed.category === 'agent') break;
+
             const record: AgentEventRecord = {
               id: generateId(),
               category: parsed.category,
@@ -312,6 +342,44 @@ export function useWebSocket(serverUrl: string, streamingEnabled: boolean = true
                 setAgentStatusDetail('');
               }
             }
+          }
+          break;
+        }
+
+        // --- Task messages ---
+        case 'task_list_result': {
+          if ('tasks' in parsed) {
+            setTasks(parsed.tasks);
+          }
+          break;
+        }
+        case 'task_session_result': {
+          if ('task_id' in parsed && 'messages' in parsed) {
+            setTaskSession({ taskId: parsed.task_id, messages: parsed.messages });
+          }
+          break;
+        }
+        case 'task_event': {
+          // Debounced refresh of task list on lifecycle events
+          clearTimeout(taskRefreshTimer.current);
+          taskRefreshTimer.current = setTimeout(() => {
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+              wsRef.current.send(JSON.stringify({ type: 'task_list' }));
+            }
+          }, 300);
+          break;
+        }
+        case 'system_message': {
+          if ('content' in parsed) {
+            const sysTaskId = 'task_id' in parsed ? String(parsed.task_id) : undefined;
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              content: parsed.content,
+              isFromUser: false,
+              timestamp: new Date(),
+              isSystem: true,
+              taskId: sysTaskId,
+            }]);
           }
           break;
         }
@@ -412,5 +480,9 @@ export function useWebSocket(serverUrl: string, streamingEnabled: boolean = true
     workspaceList,
     workspaceRead,
     workspaceWrite,
+    tasks,
+    taskSession,
+    taskList,
+    taskGetSession,
   };
 }
