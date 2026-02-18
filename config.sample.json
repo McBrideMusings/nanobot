@@ -31,6 +31,14 @@
     "port": 18790
   },
   "tools": {
-    "restrictToWorkspace": false
+    "restrictToWorkspace": false,
+    "web": {
+      "search": {
+        "provider": "brave",
+        "braveApiKey": "YOUR_BRAVE_API_KEY_HERE",
+        "tavilyApiKey": "YOUR_TAVILY_API_KEY_HERE",
+        "maxResults": 5
+      }
+    }
   }
 }

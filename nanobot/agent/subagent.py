@@ -33,19 +33,19 @@ class SubagentManager:
         workspace: Path,
         bus: MessageBus,
         model: str | None = None,
-        brave_api_key: str | None = None,
+        web_search_config: "WebSearchConfig | None" = None,
         exec_config: "ExecToolConfig | None" = None,
         restrict_to_workspace: bool = False,
         event_bus: EventBus | None = None,
         max_tokens: int = 4096,
         temperature: float = 0.7,
     ):
-        from nanobot.config.schema import ExecToolConfig
+        from nanobot.config.schema import ExecToolConfig, WebSearchConfig
         self.provider = provider
         self.workspace = workspace
         self.bus = bus
         self._model_override = model  # None = auto-discover at runtime
-        self.brave_api_key = brave_api_key
+        self.web_search_config = web_search_config or WebSearchConfig()
         self.exec_config = exec_config or ExecToolConfig()
         self.restrict_to_workspace = restrict_to_workspace
         self.event_bus = event_bus
@@ -127,7 +127,7 @@ class SubagentManager:
                 timeout=self.exec_config.timeout,
                 restrict_to_workspace=self.restrict_to_workspace,
             ))
-            tools.register(WebSearchTool(api_key=self.brave_api_key))
+            tools.register(WebSearchTool(config=self.web_search_config))
             tools.register(WebFetchTool())
             
             # Build messages with subagent-specific prompt

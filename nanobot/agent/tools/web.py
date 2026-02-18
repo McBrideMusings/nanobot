@@ -44,8 +44,8 @@ def _validate_url(url: str) -> tuple[bool, str]:
 
 
 class WebSearchTool(Tool):
-    """Search the web using Brave Search API."""
-    
+    """Search the web using a configurable provider (Brave or Tavily)."""
+
     name = "web_search"
     description = "Search the web. Returns titles, URLs, and snippets."
     parameters = {
@@ -56,34 +56,66 @@ class WebSearchTool(Tool):
         },
         "required": ["query"]
     }
-    
-    def __init__(self, api_key: str | None = None, max_results: int = 5):
-        self.api_key = api_key or os.environ.get("BRAVE_API_KEY", "")
-        self.max_results = max_results
-    
+
+    def __init__(self, config: "WebSearchConfig | None" = None):
+        from nanobot.config.schema import WebSearchConfig as _WebSearchConfig
+        self.config = config or _WebSearchConfig()
+
     async def execute(self, query: str, count: int | None = None, **kwargs: Any) -> str:
-        if not self.api_key:
-            return "Error: BRAVE_API_KEY not configured"
-        
+        n = min(max(count or self.config.max_results, 1), 10)
+        provider = self.config.provider
+        if provider == "brave":
+            return await self._search_brave(query, n)
+        elif provider == "tavily":
+            return await self._search_tavily(query, n)
+        else:
+            return f"Error: unknown search provider: {provider}"
+
+    async def _search_brave(self, query: str, n: int) -> str:
+        api_key = self.config.brave_api_key or os.environ.get("BRAVE_API_KEY", "")
+        if not api_key:
+            return "Error: no API key configured for brave"
         try:
-            n = min(max(count or self.max_results, 1), 10)
             async with httpx.AsyncClient() as client:
                 r = await client.get(
                     "https://api.search.brave.com/res/v1/web/search",
                     params={"q": query, "count": n},
-                    headers={"Accept": "application/json", "X-Subscription-Token": self.api_key},
+                    headers={"Accept": "application/json", "X-Subscription-Token": api_key},
                     timeout=10.0
                 )
                 r.raise_for_status()
-            
             results = r.json().get("web", {}).get("results", [])
             if not results:
                 return f"No results for: {query}"
-            
             lines = [f"Results for: {query}\n"]
             for i, item in enumerate(results[:n], 1):
                 lines.append(f"{i}. {item.get('title', '')}\n   {item.get('url', '')}")
                 if desc := item.get("description"):
+                    lines.append(f"   {desc}")
+            return "\n".join(lines)
+        except Exception as e:
+            return f"Error: {e}"
+
+    async def _search_tavily(self, query: str, n: int) -> str:
+        api_key = self.config.tavily_api_key or os.environ.get("TAVILY_API_KEY", "")
+        if not api_key:
+            return "Error: no API key configured for tavily"
+        try:
+            async with httpx.AsyncClient() as client:
+                r = await client.post(
+                    "https://api.tavily.com/search",
+                    json={"api_key": api_key, "query": query, "max_results": n},
+                    headers={"Accept": "application/json"},
+                    timeout=10.0
+                )
+                r.raise_for_status()
+            results = r.json().get("results", [])
+            if not results:
+                return f"No results for: {query}"
+            lines = [f"Results for: {query}\n"]
+            for i, item in enumerate(results[:n], 1):
+                lines.append(f"{i}. {item.get('title', '')}\n   {item.get('url', '')}")
+                if desc := item.get("content"):
                     lines.append(f"   {desc}")
             return "\n".join(lines)
         except Exception as e:

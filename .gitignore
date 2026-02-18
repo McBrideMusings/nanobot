@@ -1,13 +1,8 @@
-.assets
+# Secrets / local config
 .env
-*.pyc
-dist/
-build/
-docs/.vitepress/cache
-docs/.vitepress/dist
-docs/node_modules
-*.egg-info/
-*.egg
+.assets
+
+# Python
 *.pyc
 *.pyo
 *.pyd
@@ -15,15 +10,33 @@ docs/node_modules
 *.pyz
 *.pywz
 *.pyzz
+*.egg
+*.egg-info/
+dist/
+build/
 .venv/
 __pycache__/
-poetry.lock
 .pytest_cache/
-tests/
-tmp/
-botpy.log
+poetry.lock
+
+# Docs
+docs/.vitepress/cache
+docs/.vitepress/dist
+docs/node_modules
+
+# Swift / Xcode
+.build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xcbuilddata
+
+# macOS
 .DS_Store
 *.fuse*
+
+# Runtime / local scripts
+botpy.log
 tmp/
 skills/
 logs.sh

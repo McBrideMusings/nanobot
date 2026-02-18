@@ -48,6 +48,10 @@ This project uses GitHub Issues as the single source of truth for task tracking.
 - Tickets: GitHub Issues (https://github.com/McBrideMusings/nanobot/issues)
 - UI prototype reference: `tmp/nanobot-prototype.jsx`
 
+## Config Sample
+
+`config.sample.json` is the reference for how to configure a live instance. **Any time the config schema changes — new fields, renamed fields, restructured sections — update `config.sample.json` to match, including placeholder values for keys and secrets.** The owner uses this file to know what to add or change in `/mnt/user/appdata/nanobot/config.json` on the server.
+
 ## Runtime Environment
 
 Nanobot runs inside a Docker container on UnRAID. Use `run.sh` to build and deploy.
