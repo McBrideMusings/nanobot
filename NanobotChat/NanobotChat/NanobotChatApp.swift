@@ -6,6 +6,7 @@ import AppKit
 @main
 struct NanobotChatApp: App {
     @State private var client = WebSocketClient()
+    @State private var appState = AppState()
 
     init() {
         #if os(macOS)
@@ -16,8 +17,9 @@ struct NanobotChatApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
                 .environment(client)
+                .environment(appState)
         }
     }
 }

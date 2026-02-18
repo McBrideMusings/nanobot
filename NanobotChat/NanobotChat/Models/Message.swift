@@ -28,10 +28,63 @@ struct IncomingMessage: Decodable {
     let content: String?
     let id: String?
     let messages: [HistoryEntry]?
+    // Workspace fields
+    let path: String?
+    let entries: [WorkspaceEntry]?
+    let success: Bool?
+    // Status fields
+    let model: String?
+    let uptime: Double?
+    let host: String?
+    let backend: String?
+    let gatewayURL: String?
+    let capabilities: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case type, content, id, messages, path, entries, success
+        case model, uptime, host, backend, capabilities
+        case gatewayURL = "gateway_url"
+    }
 }
 
 struct HistoryEntry: Decodable {
     let role: String
+    let content: String
+}
+
+struct WorkspaceEntry: Decodable, Identifiable {
+    var id: String { name }
+    let name: String
+    let is_dir: Bool
+    let size: Int
+}
+
+struct StatusResult {
+    let model: String
+    let uptimeSeconds: Double
+    let host: String
+    let backend: String
+    let gatewayURL: String
+    let capabilities: [String]
+    let latencyMs: Double
+}
+
+/// Client -> Server: {"type": "workspace_list", "path": "subdir"}
+struct OutgoingWorkspaceList: Encodable {
+    let type = "workspace_list"
+    let path: String
+}
+
+/// Client -> Server: {"type": "workspace_read", "path": "file.txt"}
+struct OutgoingWorkspaceRead: Encodable {
+    let type = "workspace_read"
+    let path: String
+}
+
+/// Client -> Server: {"type": "workspace_write", "path": "file.txt", "content": "..."}
+struct OutgoingWorkspaceWrite: Encodable {
+    let type = "workspace_write"
+    let path: String
     let content: String
 }
 

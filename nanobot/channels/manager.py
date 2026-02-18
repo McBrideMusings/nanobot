@@ -157,6 +157,7 @@ class ChannelManager:
                     event_bus=self.event_bus,
                     workspace=self.config.agents.defaults.workspace,
                     task_store=self.task_store,
+                    model_name=self.config.agents.defaults.model,
                 )
                 logger.info("API channel enabled")
             except ImportError as e:

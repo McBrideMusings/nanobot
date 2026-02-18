@@ -12,6 +12,13 @@ final class WebSocketClient {
     var isConnected = false
     var isWaitingForResponse = false
 
+    // Workspace state
+    var workspaceEntries: [String: [WorkspaceEntry]] = [:]
+    var workspaceFileContent: (path: String, content: String)? = nil
+    var workspaceSaveStatus: SaveStatus = .idle
+
+    enum SaveStatus { case idle, saving, saved, error }
+
     private var webSocketTask: URLSessionWebSocketTask?
     private var session: URLSession
     private var receiveTask: Task<Void, Never>?
@@ -99,6 +106,61 @@ final class WebSocketClient {
         logEntries.removeAll()
     }
 
+    // MARK: - Workspace
+
+    func listWorkspace(path: String = "") {
+        sendJSON(OutgoingWorkspaceList(path: path))
+        addLog(.send, "WORKSPACE_LIST", path.isEmpty ? "." : path)
+    }
+
+    func readFile(path: String) {
+        sendJSON(OutgoingWorkspaceRead(path: path))
+        addLog(.send, "WORKSPACE_READ", path)
+    }
+
+    func writeFile(path: String, content: String) {
+        workspaceSaveStatus = .saving
+        sendJSON(OutgoingWorkspaceWrite(path: path, content: content))
+        addLog(.send, "WORKSPACE_WRITE", path)
+    }
+
+    func testConnection(url: String) async -> (latencyMs: Double, result: StatusResult?) {
+        guard let wsURL = URL(string: url) else { return (0, nil) }
+        let testSession = URLSession(configuration: .ephemeral)
+        let task = testSession.webSocketTask(with: wsURL)
+        task.resume()
+        let start = Date()
+        do {
+            try await task.send(.string(#"{"type":"status"}"#))
+            let message = try await task.receive()
+            let latency = Date().timeIntervalSince(start) * 1000
+            task.cancel(with: .normalClosure, reason: nil)
+            let data: Data
+            switch message {
+            case .string(let text): data = Data(text.utf8)
+            case .data(let d): data = d
+            @unknown default: return (latency, nil)
+            }
+            guard let incoming = try? JSONDecoder().decode(IncomingMessage.self, from: data),
+                  incoming.type == "status_result" else {
+                return (latency, nil)
+            }
+            let result = StatusResult(
+                model: incoming.model ?? "",
+                uptimeSeconds: incoming.uptime ?? 0,
+                host: incoming.host ?? "",
+                backend: incoming.backend ?? "",
+                gatewayURL: incoming.gatewayURL ?? "",
+                capabilities: incoming.capabilities ?? [],
+                latencyMs: latency
+            )
+            return (latency, result)
+        } catch {
+            task.cancel(with: .abnormalClosure, reason: nil)
+            return (0, nil)
+        }
+    }
+
     // MARK: - Receive Loop
 
     private func startReceiving() {
@@ -160,8 +222,36 @@ final class WebSocketClient {
             let content = incoming.content ?? "Unknown error"
             addLog(.receive, "ERROR", content)
 
+        case "workspace_list_result":
+            let key = incoming.path ?? "."
+            workspaceEntries[key] = incoming.entries ?? []
+            addLog(.receive, "WORKSPACE_LIST", key)
+
+        case "workspace_read_result":
+            if let path = incoming.path, let content = incoming.content {
+                workspaceFileContent = (path: path, content: content)
+                addLog(.receive, "WORKSPACE_READ", path)
+            }
+
+        case "workspace_write_result":
+            workspaceSaveStatus = (incoming.success == true) ? .saved : .error
+            addLog(.receive, "WORKSPACE_WRITE", incoming.path ?? "")
+
         default:
             addLog(.receive, incoming.type.uppercased(), incoming.content ?? "")
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func sendJSON<T: Encodable>(_ value: T) {
+        guard let data = try? JSONEncoder().encode(value),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webSocketTask?.send(.string(json)) { [weak self] error in
+            if let error {
+                log.error("Send failed: \(error.localizedDescription)")
+                Task { @MainActor in self?.handleDisconnect() }
+            }
         }
     }
 

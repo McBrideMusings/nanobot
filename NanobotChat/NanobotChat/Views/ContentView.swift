@@ -1,54 +1,19 @@
 import SwiftUI
 
-struct ContentView: View {
+struct ChatTabView: View {
     @Environment(WebSocketClient.self) private var client
+    @Environment(AppState.self) private var appState
     @State private var inputText = ""
-    @State private var showSettings = false
-    @State private var showLogs = false
     @FocusState private var isInputFocused: Bool
-    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                messageList
-                Divider()
-                inputBar
-            }
-            .navigationTitle("Nanobot")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .navigation) {
-                    connectionIndicator
-                }
-                ToolbarItem(placement: .automatic) {
-                    Button { showLogs = true } label: {
-                        Image(systemName: "text.alignleft")
-                    }
-                }
-                ToolbarItem(placement: .automatic) {
-                    Button { showSettings = true } label: {
-                        Image(systemName: "gear")
-                    }
-                }
-            }
-            .sheet(isPresented: $showLogs) {
-                LogView()
-            }
-            .sheet(isPresented: $showSettings) {
-                SettingsView()
-            }
-            .onAppear {
-                client.connect()
-                isInputFocused = true
-            }
-            .onChange(of: scenePhase) { _, phase in
-                if phase == .active && !client.isConnected {
-                    client.connect()
-                }
-            }
+        VStack(spacing: 0) {
+            messageList
+            Divider()
+            inputBar
+        }
+        .onAppear {
+            isInputFocused = true
         }
     }
 
@@ -117,14 +82,6 @@ struct ContentView: View {
         #else
         Color(nsColor: .textBackgroundColor)
         #endif
-    }
-
-    // MARK: - Connection Indicator
-
-    private var connectionIndicator: some View {
-        Circle()
-            .fill(client.isConnected ? .green : .red)
-            .frame(width: 10, height: 10)
     }
 
     // MARK: - Actions

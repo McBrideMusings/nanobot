@@ -53,12 +53,15 @@ class ApiChannel(BaseChannel):
                  session_manager: "SessionManager | None" = None,
                  event_bus: "EventBus | None" = None,
                  workspace: str = "~/.nanobot/workspace",
-                 task_store: "TaskStore | None" = None):
+                 task_store: "TaskStore | None" = None,
+                 model_name: str = ""):
         super().__init__(config, bus)
         self.config: ApiConfig = config
         self.session_manager = session_manager
         self.event_bus = event_bus
         self.task_store = task_store
+        self._model_name = model_name
+        self._start_time = time.monotonic()
         self._server = None
         self._connections: dict[str, object] = {}
         self._latest_conn_id: str | None = None
@@ -430,6 +433,20 @@ class ApiChannel(BaseChannel):
             return
 
         msg_type = data.get("type")
+
+        if msg_type == "status":
+            import platform
+            payload = {
+                "type": "status_result",
+                "model": self._model_name,
+                "uptime": time.monotonic() - self._start_time,
+                "host": platform.node(),
+                "backend": "nanobot",
+                "gateway_url": f"ws://{self.config.host}:{self.config.port}",
+                "capabilities": ["chat", "workspace", "tasks"],
+            }
+            await ws.send(json.dumps(payload))
+            return
 
         if msg_type == "link_preview":
             url = data.get("url", "")
