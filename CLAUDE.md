@@ -10,20 +10,34 @@ Nanobot is an ultra-lightweight personal AI assistant (~4,000 lines of core agen
 - **`bridge/`** — Node.js WhatsApp bridge
 - **`docs/`** — VitePress documentation site + ticket board
 
-## Ticket Workflow
+## Workflow
 
-Tickets live in `docs/tickets/*.md` with YAML frontmatter (`title`, `status`, `priority`, `tags`).
+This project uses GitHub Issues as the single source of truth for task tracking.
 
-**When working on a ticket, always update it:**
+- All work happens on branches named `<type>/<short-slug>-<issue-number>` (e.g. `feat/mcp-support-3`)
+- Commits follow conventional commit format: `<type>(<scope>): <summary> (#<issue-number>)`
+- No PRs. Branches merge directly to main.
+- Status is tracked via labels: `status:todo`, `status:in-progress`, `status:blocked`, `status:done`
+- Milestones group issues by theme: Core Agent → Web Client Foundation → iOS Foundation → Content & Media → Monitoring & Logs → Social & Presence → Settings & Polish → Media Skills
 
-1. **Starting work** — Change `status: backlog` → `status: doing` at the top of the ticket file
-2. **During implementation** — Add notes, decisions, or scope changes to the ticket body as you go (e.g. under a `## Notes` section)
-3. **Completing work** — Change `status: doing` → `status: done`
-4. **If blocked or paused** — Leave status as `doing` and add a note explaining what's blocking
+### Session Start
 
-Valid board column keys: `backlog`, `doing`, `review`, `done` (must match `docs/board.md`).
+1. Check current branch and whether it maps to an open issue.
+2. Run `git log --oneline -10` and `gh issue list --state open` to understand current state.
+3. If on a feature branch, continue that work. If on main, pick the next issue by milestone priority.
+4. If `gh` commands fail with auth errors, stop and report. Do not attempt to fix auth.
 
-This keeps the board view accurate and provides a record of decisions made during implementation.
+### Session End
+
+1. Close completed issues and update status labels.
+2. Update ROADMAP.md if milestone progress has changed.
+3. Update README.md if completed work changes how the project is used, installed, or configured.
+
+### References
+
+- See ROADMAP.md for high-level project direction and milestone status.
+- See GitHub Issues for individual work items: https://github.com/McBrideMusings/nanobot/issues
+- `docs/tickets/` — legacy ticket files, superseded by GitHub Issues (do not add new tickets here)
 
 ## Key Paths
 
@@ -31,7 +45,7 @@ This keeps the board view accurate and provides a record of decisions made durin
 - Agent loop: `nanobot/agent/loop.py`
 - Web app entry: `NanobotWeb/src/App.tsx`
 - iOS app entry: `NanobotChat/NanobotChat/NanobotChatApp.swift`
-- Tickets: `docs/tickets/*.md`
+- Tickets: GitHub Issues (https://github.com/McBrideMusings/nanobot/issues)
 - UI prototype reference: `tmp/nanobot-prototype.jsx`
 
 ## Runtime Environment

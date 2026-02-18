@@ -1,3 +1,4 @@
+<!-- Migrated to GitHub Issues on 2026-02-17. See https://github.com/McBrideMusings/nanobot/issues/31 -->
 ---
 title: Kometa Skill
 status: backlog
