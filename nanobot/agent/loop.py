@@ -342,6 +342,17 @@ class AgentLoop:
             chat_id=msg.chat_id,
         )
 
+        # Autonomous task mode — override conversational defaults for heartbeat/cron
+        if msg.metadata and msg.metadata.get("task_id"):
+            messages[0]["content"] += (
+                "\n\n## AUTONOMOUS TASK MODE\n"
+                "This is a scheduled autonomous task with NO human in the loop. "
+                "Execute ALL steps immediately without asking for confirmation, "
+                "permission, or clarification. Do not ask questions. Do not offer "
+                "choices. Do not stop to check in. Just complete every step in the "
+                "instructions and report results when finished."
+            )
+
         # Resolve model, truncate history to fit context window
         tool_defs = self.tools.get_definitions()
         model, messages = await self._prepare_context(messages, tool_defs)

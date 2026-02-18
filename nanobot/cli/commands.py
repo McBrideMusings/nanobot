@@ -944,13 +944,17 @@ app.add_typer(heartbeat_app, name="heartbeat")
 @heartbeat_app.command("trigger")
 def heartbeat_trigger():
     """Manually trigger a heartbeat now."""
+    from loguru import logger as _logger
     from nanobot.config.loader import load_config, get_data_dir
     from nanobot.bus.queue import MessageBus
-    from nanobot.bus.event_bus import EventBus
+    from nanobot.bus.event_bus import EventBus, AgentEvent
     from nanobot.agent.loop import AgentLoop
     from nanobot.session.manager import SessionManager
     from nanobot.heartbeat.service import HeartbeatService
     from nanobot.task.store import TaskStore
+
+    # Silence loguru INFO — event bus output replaces it
+    _logger.disable("nanobot")
 
     config = load_config()
     bus = MessageBus()
@@ -984,13 +988,35 @@ def heartbeat_trigger():
         event_bus=event_bus,
     )
 
+    # Live progress via event bus
+    async def on_event(event: AgentEvent):
+        if event.category == "agent":
+            if event.event == "thinking_started":
+                n = event.data.get("iteration", "?")
+                console.print(f"  [dim]thinking (iteration {n})...[/dim]")
+            elif event.event == "tool_call":
+                name = event.data.get("name", "?")
+                args = event.data.get("args", {})
+                preview = ", ".join(f"{k}={repr(v)[:60]}" for k, v in args.items())
+                console.print(f"  [cyan]> {name}[/cyan]({preview})")
+            elif event.event == "tool_result":
+                ms = event.data.get("duration_ms", 0)
+                result = event.data.get("result_preview", "")[:80]
+                if result:
+                    console.print(f"  [dim]  {result} ({ms}ms)[/dim]")
+            elif event.event == "thinking_finished":
+                n = event.data.get("iterations", "?")
+                console.print(f"  [green]done[/green] [dim]({n} iterations)[/dim]")
+
+    event_bus.subscribe(on_event)
+    console.print(f"{__logo__} Running heartbeat...\n")
+
     async def run():
-        with console.status("[dim]Running heartbeat...[/dim]", spinner="dots"):
-            return await heartbeat_svc.trigger_now()
+        return await heartbeat_svc.trigger_now()
 
     response = asyncio.run(run())
     if response:
-        console.print(f"\n{__logo__} Heartbeat result:\n")
+        console.print(f"\n{__logo__} Result:\n")
         console.print(Markdown(response))
     else:
         console.print("[yellow]No heartbeat response (HEARTBEAT.md may be empty)[/yellow]")

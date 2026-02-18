@@ -107,10 +107,12 @@ class HeartbeatService:
     def _build_prompt(self, content: str) -> str:
         """Build heartbeat prompt with file content injected inline."""
         return (
-            "You have a scheduled heartbeat task. Here are your instructions:\n\n"
+            "AUTONOMOUS HEARTBEAT TASK — execute all steps below without "
+            "asking for confirmation or stopping to check in.\n\n"
             f"{content}\n\n"
-            "Follow any instructions or tasks listed above.\n"
-            "If nothing needs attention, reply with just: HEARTBEAT_OK"
+            "Execute every step now. Do not ask questions. Do not offer choices. "
+            "When done, summarize what you did in 1-2 sentences.\n"
+            "If there is genuinely nothing to do, reply with just: HEARTBEAT_OK"
         )
 
     async def _tick(self) -> None:

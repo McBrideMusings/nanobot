@@ -34,6 +34,19 @@ This keeps the board view accurate and provides a record of decisions made durin
 - Tickets: `docs/tickets/*.md`
 - UI prototype reference: `tmp/nanobot-prototype.jsx`
 
+## Runtime Environment
+
+Nanobot runs inside a Docker container on UnRAID. Use `run.sh` to build and deploy.
+
+- **To run CLI commands against the live instance:** `docker exec nanobot <command>`
+- Example: `docker exec nanobot nanobot heartbeat trigger`
+- Do NOT run `nanobot` commands directly on the host — there's no API key configured outside the container.
+- Config lives at `/mnt/user/appdata/nanobot/config.json` on the host, mounted as `/root/.nanobot/config.json` in the container.
+
+## Commit Rules
+
+- NEVER add "Co-Authored-By" lines to commits. No AI attribution. Ever.
+
 ## Code Style
 
 - Python: standard library conventions, type hints, minimal dependencies

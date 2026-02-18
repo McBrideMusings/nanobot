@@ -1,0 +1,97 @@
+#!/bin/bash
+# nb — nanobot dev helper
+# Usage: ./nb <command> [args...]
+
+set -e
+
+CONTAINER="nanobot"
+REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+_require_running() {
+  if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER}$"; then
+    echo "Container not running. Use: ./nb run"
+    exit 1
+  fi
+}
+
+case "${1:-help}" in
+  run)
+    exec bash "$REPO_DIR/run.sh"
+    ;;
+
+  stop)
+    docker stop "$CONTAINER" 2>/dev/null && echo "Stopped." || echo "Not running."
+    ;;
+
+  restart)
+    docker stop "$CONTAINER" 2>/dev/null || true
+    docker rm "$CONTAINER" 2>/dev/null || true
+    exec bash "$REPO_DIR/run.sh"
+    ;;
+
+  logs)
+    _require_running
+    docker logs -f ${2:+--tail "$2"} "$CONTAINER"
+    ;;
+
+  heartbeat)
+    _require_running
+    echo "Triggering heartbeat..."
+    docker exec "$CONTAINER" nanobot heartbeat trigger
+    ;;
+
+  heartbeat-status)
+    _require_running
+    docker exec "$CONTAINER" nanobot heartbeat status
+    ;;
+
+  sync-skills)
+    exec bash "$REPO_DIR/sync-skills.sh"
+    ;;
+
+  shell)
+    _require_running
+    docker exec -it "$CONTAINER" bash
+    ;;
+
+  exec)
+    _require_running
+    shift
+    docker exec "$CONTAINER" "$@"
+    ;;
+
+  status)
+    _require_running
+    docker exec "$CONTAINER" nanobot status
+    ;;
+
+  cron)
+    _require_running
+    shift
+    docker exec "$CONTAINER" nanobot cron "${@:-list}"
+    ;;
+
+  lines)
+    bash "$REPO_DIR/core_agent_lines.sh"
+    ;;
+
+  help|*)
+    cat <<'USAGE'
+nb — nanobot dev helper
+
+  run              Build and start container
+  stop             Stop container
+  restart          Stop, rebuild, and start
+  logs [N]         Follow logs (optionally tail last N lines)
+  heartbeat        Force trigger a heartbeat
+  heartbeat-status Show heartbeat config and recent runs
+  sync-skills      Sync skills to workspace
+  shell            Open bash in container
+  exec <cmd...>    Run arbitrary command in container
+  status           Show nanobot status
+  cron [cmd]       Run cron subcommands (default: list)
+  lines            Core agent line count
+  help             Show this message
+USAGE
+    ;;
+esac
