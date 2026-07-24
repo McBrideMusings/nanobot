@@ -42,3 +42,4 @@ skills/
 logs.sh
 run.sh
 sync-skills.sh
+*.local.*
